@@ -1,0 +1,116 @@
+/* ============================================================
+   AUTOMATA — LAUNCH SPLASH (blue edition)
+   Bigger launch window:
+     top    -> OOP LAB PROJECT
+     middle -> logo, Automata, (Pre release)
+     bottom -> slogan + one quiet loading status line
+   Colour scheme is now blue; the logo itself is untouched.
+   No loading bar and no decorative animations.
+   ============================================================ */
+
+.splash-page {
+  /* Blue scheme — pehle near-black tha, ab deep blue gradient hai. */
+  background:
+    radial-gradient(120% 90% at 50% 0%, #16407f 0%, #0b2450 46%, #071733 100%);
+  color: var(--cream);
+  overflow: hidden;
+  cursor: default;
+}
+
+.splash {
+  position: relative;
+  height: 100vh;
+  width: 100%;
+  padding: 34px 46px 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  text-align: center;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+/* Logo ke peeche halka blue glow — splash ko depth deta hai. */
+.splash::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(52% 46% at 50% 44%,
+              rgba(64, 132, 235, 0.22), transparent 70%);
+  pointer-events: none;
+}
+
+/* ---- Top line ---- */
+.splash-topline {
+  position: relative;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: rgba(198, 216, 247, 0.66);
+}
+
+/* ---- Centre block ---- */
+.splash-center {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.splash-logo {
+  color: #e9effc;
+  margin-bottom: 8px;
+  filter: drop-shadow(0 0 18px rgba(86, 148, 255, 0.35));
+}
+
+.splash-wordmark {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 58px;
+  line-height: 0.95;
+  letter-spacing: -0.02em;
+  color: #f2f5fc;
+}
+
+.splash-release {
+  margin: 8px 0 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--amber);
+}
+
+/* ---- Bottom block ---- */
+.splash-bottom {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.splash-slogan {
+  margin: 0;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 15px;
+  color: rgba(203, 219, 248, 0.74);
+}
+
+/* ---- One quiet status line ---- */
+.splash-status {
+  min-height: 16px;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #e2eafb;
+}

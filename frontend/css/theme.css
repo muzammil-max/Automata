@@ -1,0 +1,134 @@
+/* ============================================================
+   AUTOMATA — DESIGN TOKENS
+   Dark mode is the default and the only theme.
+   The sidebar is a deep neutral grey, the chat area is a dark grey
+   surface, and the amber accent is the "agent" colour.
+   ============================================================ */
+
+:root {
+  color-scheme: dark;
+
+  /* ---- Ink (sidebar / splash) — deep BLUE ---- */
+  --ink: #0c1a30;
+  --ink-2: #081426;
+  --ink-3: #12233c;
+  --ink-line: rgba(138, 178, 240, 0.16);
+  --ink-muted: rgba(178, 198, 232, 0.6);
+
+  /* ---- Deep blue surfaces (chat area) — blue edition ---- */
+  --paper: #0d1a2e;
+  --paper-2: #142a48;
+  --paper-3: #1a3660;
+  --navy: #cfe0f5;          /* primary text on blue surfaces */
+  --navy-soft: #9db8dd;     /* secondary text */
+  --cream: #dce8f8;
+  --muted: #8ba3c4;
+  --line: rgba(140, 180, 240, 0.16);
+  --line-strong: rgba(140, 180, 240, 0.26);
+
+  /* ---- Accent ---- */
+  --amber: #f2b134;
+  --amber-deep: #d89212;
+  --amber-soft: rgba(242, 177, 52, 0.16);
+  --green: #4fbf8b;
+  --red: #e05c5c;
+
+  /* ---- Type ---- */
+  --font-display: "Instrument Serif", Georgia, "Times New Roman", serif;
+  --font-mono: "IBM Plex Mono", "Courier New", monospace;
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* ---- Shape ---- */
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --shadow-soft: 0 18px 48px rgba(0, 0, 0, 0.34);
+  --shadow-float: 0 24px 64px rgba(0, 0, 0, 0.52);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button, input, textarea {
+  font: inherit;
+}
+
+button { cursor: pointer; }
+
+:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.hidden { display: none !important; }
+
+/* ---- Shimmer text (used by "Thinking…" and splash status) ---- */
+@keyframes shimmer {
+  from { background-position: 140% 0; }
+  to   { background-position: -140% 0; }
+}
+
+.shimmer {
+  background-image: linear-gradient(
+    100deg,
+    rgba(214, 217, 222, 0.38) 0%,
+    #d6d9de 42%,
+    #f2b134 50%,
+    #d6d9de 58%,
+    rgba(214, 217, 222, 0.38) 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 1.8s linear infinite;
+}
+
+.shimmer--light {
+  background-image: linear-gradient(
+    100deg,
+    rgba(214, 217, 222, 0.40) 0%,
+    #d6d9de 42%,
+    #f2b134 50%,
+    #d6d9de 58%,
+    rgba(214, 217, 222, 0.40) 100%
+  );
+}
+
+/* ---- Tiny scrollbars ---- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(214, 217, 222, 0.18) transparent;
+}
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb {
+  background: rgba(214, 217, 222, 0.18);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-track { background: transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer, .shimmer--light {
+    background: none;
+    color: inherit;
+    animation: none;
+    -webkit-background-clip: border-box;
+    background-clip: border-box;
+  }
+  *, *::before, *::after {
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001s !important;
+  }
+}

@@ -1,0 +1,101 @@
+#!/bin/sh
+# Automata — desktop launcher.
+#
+# What this script does, in simple words:
+#   1. Find Google Chrome on this computer.
+#   2. Start ChromeDriver (the bridge program) if it is not running.
+#   3. Tell the backend which browser to use (CHROME_PATH).
+#   4. Open the Electron window.
+#
+# Google Chrome is preferred. If it is installed from Flathub, we create a
+# tiny wrapper that lets ChromeDriver see Chrome's DevTools port in /tmp.
+# Chromium is kept as a fallback. You can always override the browser:
+#   CHROME_PATH=/path/to/chrome ./Automata
+
+export PATH="/home/muzammil/.nvm/versions/node/v24.18.0/bin:$PATH"
+
+# Logs go here. Make sure the folder exists (it is outside the project).
+mkdir -p /tmp/opencode
+
+# ---- 1. Find Google Chrome ----
+if [ -z "$CHROME_PATH" ]; then
+  for candidate in \
+    /usr/bin/google-chrome \
+    /usr/bin/google-chrome-stable \
+    /opt/google/chrome/chrome \
+    /opt/google/chrome/google-chrome \
+    /snap/bin/google-chrome
+  do
+    if [ -x "$candidate" ]; then
+      CHROME_PATH="$candidate"
+      break
+    fi
+  done
+fi
+
+# Fedora installs Chrome from Flathub. ChromeDriver needs the host /tmp to
+# read DevToolsActivePort, so run Chrome through a one-flag wrapper.
+if [ -z "$CHROME_PATH" ] && command -v flatpak >/dev/null 2>&1; then
+  if flatpak info com.google.Chrome >/dev/null 2>&1; then
+    CHROME_WRAPPER="${XDG_CACHE_HOME:-$HOME/.cache}/automata/automata-chrome"
+    mkdir -p "$(dirname "$CHROME_WRAPPER")"
+    cat > "$CHROME_WRAPPER" <<'WRAPPER'
+#!/bin/sh
+exec flatpak run --filesystem=/tmp com.google.Chrome "$@"
+WRAPPER
+    chmod +x "$CHROME_WRAPPER"
+    CHROME_PATH="$CHROME_WRAPPER"
+  fi
+fi
+
+# ---- 1b. Chromium fallback ----
+if [ -z "$CHROME_PATH" ]; then
+  for candidate in \
+    /usr/bin/chromium-browser \
+    /usr/bin/chromium \
+    /usr/lib64/chromium-browser/chromium-browser \
+    /usr/lib/chromium-browser/chromium-browser \
+    /snap/bin/chromium
+  do
+    if [ -x "$candidate" ]; then
+      CHROME_PATH="$candidate"
+      break
+    fi
+  done
+fi
+
+if [ -z "$CHROME_PATH" ]; then
+  echo "Automata: Chrome was not found. Install Google Chrome or set CHROME_PATH."
+  exit 1
+fi
+
+# The backend reads this variable when it opens the browser.
+export CHROME_PATH
+
+# ---- 2. Find the matching ChromeDriver ----
+if [ -z "$CHROMEDRIVER_BIN" ]; then
+  for candidate in \
+    /usr/lib64/chromium-browser/chromedriver \
+    /usr/lib/chromium-browser/chromedriver \
+    /usr/bin/chromedriver \
+    /snap/bin/chromium.chromedriver
+  do
+    if [ -x "$candidate" ]; then
+      CHROMEDRIVER_BIN="$candidate"
+      break
+    fi
+  done
+fi
+
+# ---- 3. Start ChromeDriver if it is not already running ----
+if [ -n "$CHROMEDRIVER_BIN" ]; then
+  if ! curl -sf -m 2 http://127.0.0.1:9515/status >/dev/null 2>&1; then
+    nohup "$CHROMEDRIVER_BIN" --port=9515 >/tmp/opencode/chromedriver.log 2>&1 &
+  fi
+else
+  echo "Automata: chromedriver was not found. The browser will not start."
+fi
+
+# ---- 4. Open the app window ----
+cd /home/muzammil/Desktop/automata2/frontend
+exec npx electron .

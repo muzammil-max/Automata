@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Automata</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/theme.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- ============================ SIDEBAR ============================ -->
+  <aside class="sidebar" id="sidebar" aria-label="Chat history">
+    <div class="brand">
+      <div class="brand-logo" id="brand-logo" aria-hidden="true"></div>
+      <div class="brand-copy">
+        <span class="brand-name">Automata</span>
+        <span class="brand-sub">OOP Lab Project</span>
+      </div>
+    </div>
+
+    <button type="button" class="new-chat" id="new-chat">
+      <span>+</span><span>New chat</span>
+    </button>
+
+    <div class="sidebar-label">History</div>
+    <nav class="session-list" id="session-list" aria-label="Previous chats"></nav>
+
+    <div class="sidebar-bottom">
+      <button type="button" class="browser-pill" id="browser-pill" title="Browser status">
+        <span class="dot" aria-hidden="true"></span>
+        <span id="browser-text">Browser off</span>
+      </button>
+      <button type="button" class="ghost-btn" id="btn-close-browser">Close browser</button>
+      <button type="button" class="ghost-btn" id="btn-settings">Settings</button>
+    </div>
+  </aside>
+
+  <!-- ============================ CHAT ============================ -->
+  <main class="chat-panel" aria-label="Chat">
+    <header class="chat-header">
+      <div class="chat-title">
+        <span class="chat-title-text" id="chat-title-text">New chat</span>
+        <span class="chat-subtitle" id="chat-subtitle">Ask anything, or give a browser task</span>
+      </div>
+      <div class="window-controls">
+        <button type="button" class="win-btn" id="btn-draw" aria-label="Open drawing tool" title="Draw">
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+            <path d="M2 13.5l1-3.5L10.5 2.5a1.4 1.4 0 0 1 2 0l1 1a1.4 1.4 0 0 1 0 2L6 13l-4 .5z"
+                  fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <button type="button" class="win-btn" id="toggle-sidebar" aria-label="Toggle history sidebar" title="History">☰</button>
+        <button type="button" class="win-btn" id="btn-min" aria-label="Minimize window">–</button>
+        <button type="button" class="win-btn" id="btn-max" aria-label="Maximize window">□</button>
+        <button type="button" class="win-btn close" id="btn-quit" aria-label="Quit Automata">×</button>
+      </div>
+    </header>
+
+    <div class="chat-scroll" id="chat-scroll">
+      <div class="chat-inner">
+
+        <!-- Hero: visible until the first message -->
+        <section class="hero" id="hero" aria-label="Welcome">
+          <div class="hero-logo" id="hero-logo" aria-hidden="true"></div>
+          <h1 class="hero-title">Automata</h1>
+          <p class="hero-sub">
+            A browser agent that can also talk. Ask a question, or tell me
+            exactly what to do on a website.
+          </p>
+          <div class="suggestions" id="suggestions">
+            <button type="button" class="chip" data-prompt="Explain recursion in simple words.">Explain recursion</button>
+            <button type="button" class="chip" data-prompt="Who are you and what can you do?">What can you do?</button>
+            <button type="button" class="chip" data-prompt="Go to example.com and tell me the main heading.">Open a website</button>
+            <button type="button" class="chip" data-prompt="Go to an online notepad and write a short note about OOP.">Use a notepad</button>
+          </div>
+        </section>
+
+        <!-- Messages appear here -->
+        <div class="messages" id="messages" role="log" aria-live="polite"></div>
+      </div>
+    </div>
+
+    <!-- ============================ COMPOSER ============================ -->
+    <form class="composer" id="composer">
+      <div class="composer-inner">
+        <label class="sr-only" for="message-input">Message Automata</label>
+        <textarea id="message-input" class="message-input" rows="1"
+                  placeholder="Message Automata…"
+                  autocomplete="off"></textarea>
+        <button type="submit" class="send-btn" id="send-btn" aria-label="Send message">↑</button>
+        <button type="button" class="stop-btn hidden" id="stop-btn">Stop</button>
+      </div>
+      <p class="composer-hint">Enter to send · Shift+Enter for a new line · Browser opens only for web tasks</p>
+    </form>
+  </main>
+</div>
+
+<div id="dialog-root"></div>
+
+<!-- ============================ DRAWING TOOL ============================ -->
+<section class="draw-overlay hidden" id="draw-overlay" aria-label="Drawing tool">
+  <div class="draw-window" role="dialog" aria-modal="true" aria-labelledby="draw-title">
+    <header class="draw-titlebar">
+      <span class="draw-title" id="draw-title">Automata Draw</span>
+      <button type="button" class="win-btn close" id="draw-close" aria-label="Close drawing tool">×</button>
+    </header>
+
+    <div class="draw-toolbar">
+      <div class="draw-swatches" id="draw-swatches" role="group" aria-label="Brush colour"></div>
+
+      <label class="draw-field" for="draw-size">
+        <span>Brush</span>
+        <input type="range" id="draw-size" min="1" max="26" value="4" aria-label="Brush size">
+        <span class="draw-size-value" id="draw-size-value">4</span>
+      </label>
+
+      <button type="button" class="ghost-btn draw-btn" id="draw-eraser" aria-pressed="false">Eraser</button>
+      <button type="button" class="ghost-btn draw-btn" id="draw-clear">Clear</button>
+      <button type="button" class="ghost-btn draw-btn" id="draw-save">Save PNG</button>
+    </div>
+
+    <canvas id="draw-canvas" class="draw-canvas" width="1000" height="580"
+            aria-label="Drawing canvas" tabindex="0"></canvas>
+
+    <p class="draw-hint">Draw with the mouse. Esc closes the tool.</p>
+  </div>
+</section>
+
+<script src="js/components.js"></script>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+<script src="js/draw.js"></script>
+</body>
+</html>

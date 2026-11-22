@@ -1,0 +1,17 @@
+{
+  "name": "automata-frontend",
+  "version": "1.0.0",
+  "productName": "Automata",
+  "description": "Automata desktop UI (Electron)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.0.0"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
+  }
+}
