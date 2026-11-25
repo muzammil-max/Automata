@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banner.svg" alt="Automata - The AI browser agent that lives on your desktop" width="100%">
+  <img src="docs/banner.png" alt="Automata - The AI browser agent that lives on your desktop" width="100%">
 </p>
 
 <p align="center">
@@ -78,7 +78,7 @@
 ## 🖥️ The Big Picture
 
 <p align="center">
-  <img src="docs/architecture.svg" alt="Automata architecture: Electron frontend, C++ backend, ChromeDriver, Chrome and NVIDIA AI" width="100%">
+  <img src="docs/architecture.png" alt="Automata architecture: Electron frontend, C++ backend, ChromeDriver, Chrome and NVIDIA AI" width="100%">
 </p>
 
 | Layer | Role |
