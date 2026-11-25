@@ -139,15 +139,7 @@ Full instructions: [`build/windows/README.md`](build/windows/README.md)
 
 ## 📸 Screenshots & Icons
 
-### 🖼️ Visuals
 
-**Windows — main chat window (packaged build):**
-
-![Automata Windows app window](docs/screenshots/windows-portable-launch.png)
-
-**Windows — splash screen:**
-
-![Automata Windows splash](docs/screenshots/windows-splash.png)
 
 ### 🪟 Icons
 
