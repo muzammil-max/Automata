@@ -1,0 +1,21 @@
+.vercel
+node_modules/
+__pycache__/
+
+# build outputs
+build/windows/.tools/
+build/windows/artifacts/
+build/windows/dist/
+
+# compiled artifacts
+backend/*.o
+backend/*.pdb
+backend/api_server
+backend/api_server.exe
+backend/*_test
+
+# runtime data (chats, logs)
+storage/
+
+*.lib
+*.log

@@ -14,6 +14,22 @@ const API_BASE = "http://127.0.0.1:8080";
 let mainWindow = null;
 let backendProcess = null;
 
+/* ---- logging ----
+   Packaged app mein console nahi hota, is liye har zaruri baat
+   userData folder ki automata.log mein likhte hain. */
+function appLog(message) {
+  try {
+    const dir = app.getPath("userData");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(
+      path.join(dir, "automata.log"),
+      "[" + new Date().toISOString() + "] " + message + "\n"
+    );
+  } catch (e) {
+    /* logging kabhi app ko na roke */
+  }
+}
+
 /* ---- backend health ---- */
 async function healthy() {
   try {
@@ -38,6 +54,8 @@ async function ensureBackend() {
   ].filter(Boolean);
 
   const binary = candidates.find((p) => fs.existsSync(p));
+  appLog("ensureBackend: candidates=" + JSON.stringify(candidates) + " chosen=" + (binary || "none"));
+
   if (binary) {
     try {
       // Packaged app ko apne folder mein likhne ki ijazat nahi hoti, is liye
@@ -45,21 +63,35 @@ async function ensureBackend() {
       const backendCwd = app.isPackaged ? app.getPath("userData") : path.dirname(binary);
       fs.mkdirSync(backendCwd, { recursive: true });
 
+      // GUI app ka koi console nahi hota, is liye backend ka output
+      // backend.log mein jata hai (debug karne mein asaan).
+      let out = "ignore";
+      try {
+        out = fs.openSync(path.join(backendCwd, "backend.log"), "a");
+      } catch (e) {
+        /* log file na bane to bhi backend chalna chahiye */
+      }
+
       backendProcess = spawn(binary, [], {
         cwd: backendCwd,
-        stdio: "inherit",
+        stdio: ["ignore", out, out],
         windowsHide: true,
         env: Object.assign({}, process.env, {
           // Backend ko batao frontend kahan hai (packaged app ke liye zaruri).
           AUTOMATA_FRONTEND_DIR: __dirname
         })
       });
-      backendProcess.on("error", (e) => console.error("backend spawn:", e.message));
+
+      appLog("backend spawned pid=" + backendProcess.pid + " cwd=" + backendCwd);
+      backendProcess.on("error", (e) => appLog("backend spawn error: " + e.message));
+      backendProcess.on("exit", (code, signal) => {
+        appLog("backend exited code=" + code + " signal=" + signal);
+      });
     } catch (e) {
-      console.error("could not start backend:", e.message);
+      appLog("could not start backend: " + e.message);
     }
   } else {
-    console.error("backend binary not found; start it manually");
+    appLog("backend binary not found; start it manually");
   }
 
   // Wait up to 6 seconds for it to answer.
@@ -91,6 +123,7 @@ async function ensureChromedriver() {
 
   const binary = candidates.find((p) => fs.existsSync(p));
   if (!binary) {
+    appLog("chromedriver.exe not found; browser tasks will not work");
     console.error("chromedriver.exe not found; browser tasks will not work");
     return;
   }
@@ -100,8 +133,10 @@ async function ensureChromedriver() {
       stdio: "ignore",
       windowsHide: true
     });
-    driver.on("error", (e) => console.error("chromedriver spawn:", e.message));
+    appLog("chromedriver spawned pid=" + driver.pid);
+    driver.on("error", (e) => appLog("chromedriver spawn error: " + e.message));
   } catch (e) {
+    appLog("could not start chromedriver: " + e.message);
     console.error("could not start chromedriver:", e.message);
   }
 }
@@ -137,6 +172,10 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, "boot.html")).catch(function (e) {
     console.error("splash load failed:", e.message);
     if (mainWindow) mainWindow.show();
+  });
+
+  mainWindow.webContents.on("did-fail-load", function (event, code, desc, url) {
+    appLog("did-fail-load code=" + code + " desc=" + desc + " url=" + url);
   });
 
   mainWindow.once("ready-to-show", function () {

@@ -27,6 +27,22 @@ using namespace std;
 static const char *ELEMENT_KEY = "element-6066-11e4-a52e-4f735466cecf";
 
 // ---------------------------------------------------------------
+// Automata ki home website.
+// Har naye browser session mein yeh page khulta hai. Address badalne
+// ke liye AUTOMATA_HOME_URL environment variable set karo.
+// ---------------------------------------------------------------
+static string automata_home_url()
+{
+    const char *env = getenv("AUTOMATA_HOME_URL");
+    if (env != nullptr && *env != '\0')
+    {
+        return string(env);
+    }
+    // Default: Vercel production deployment (website/ folder).
+    return "https://automata-app.vercel.app";
+}
+
+// ---------------------------------------------------------------
 // Where is the browser program?
 //
 // ChromeDriver calls the protocol browser name "chrome", but it can start
@@ -138,6 +154,26 @@ static string find_browser_binary()
             return string(candidate);
         }
     }
+
+    // 3) Per-user installs (sab se aam jagah): %LOCALAPPDATA%\Google\Chrome...
+    const char *local_app_data = getenv("LOCALAPPDATA");
+    if (local_app_data != nullptr && *local_app_data != '\0')
+    {
+        const char *relative_candidates[] = {
+            "\\Google\\Chrome\\Application\\chrome.exe",
+            "\\Microsoft\\Edge\\Application\\msedge.exe",
+        };
+
+        for (const char *relative : relative_candidates)
+        {
+            string candidate = string(local_app_data) + relative;
+            if (path_is_executable(candidate))
+            {
+                return candidate;
+            }
+        }
+    }
+
 #else
     // 2) Normal Google Chrome locations.
     const char *chrome_candidates[] = {
@@ -495,6 +531,26 @@ bool BrowserController::start_browser(string &error)
 
         cout << "Launched browser successfully" << endl;
         cout << "session id = " << id << endl;
+
+        // ---------------------------------------------------------
+        // Naya browser khulte hi Automata ki website kholo.
+        // Agar page load fail ho jaye to browser phir bhi chalta rahe.
+        // ---------------------------------------------------------
+        const string home = automata_home_url();
+        nlohmann::json home_request;
+        home_request["url"] = home;
+        string home_body, home_error;
+
+        if (request_bhejo("POST", session_url + "/url", home_request.dump(),
+                          home_body, home_error))
+        {
+            cout << "Opened home page: " << home << endl;
+        }
+        else
+        {
+            cout << "Home page could not open: " << home_error << endl;
+        }
+
         return true;
     }
     catch (const nlohmann::json::exception &)

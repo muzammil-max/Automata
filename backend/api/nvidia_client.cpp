@@ -94,17 +94,21 @@ bool NVIDIAClient::generate_response(
     error.clear();
 
 
-    // Get NVIDIA API key from the environment (documented in the README),
-    // with the saved key as a fallback so nothing breaks today.
+    // Get NVIDIA API key from the environment (documented in the README).
+    // Kabhi bhi key ko source code mein hard-code na karo: ye repo public hai.
     const char* env_key = getenv("NVIDIA_API_KEY");
-    const string api_key = (env_key != nullptr && string(env_key).empty() == 0)
-                               ? string(env_key)
-                               : "ADD_API_KEY_HERRE_ME NH DO GA";
+    const string api_key = (env_key != nullptr) ? string(env_key) : "";
 
     // Validate prompt
     if (prompt.empty())
     {
         error = "Prompt cannot be empty!";
+        return false;
+    }
+
+    if (api_key.empty())
+    {
+        error = "NVIDIA_API_KEY is not set. Set the environment variable and restart the app.";
         return false;
     }
 
