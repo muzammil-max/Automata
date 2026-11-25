@@ -1,9 +1,9 @@
 <p align="center">
-  <img src="docs/banner.png" alt="Automata - The AI browser agent that lives on your desktop" width="100%">
+  <img src="docs/screenshots/banner.png" alt="Automata - The AI browser agent that lives on your desktop" width="100%">
 </p>
 
 <p align="center">
-  Chat with an AI, let it drive a real Chrome browser, and watch it automate on web pages, all from one app.
+  Chat with an AI, let it drive a real Chrome browser, and watch it draw on web pages, all from one app.
 </p>
 
 <p align="center">
@@ -78,7 +78,7 @@
 ## 🖥️ The Big Picture
 
 <p align="center">
-  <img src="docs/architecture.png" alt="Automata architecture: Electron frontend, C++ backend, ChromeDriver, Chrome and NVIDIA AI" width="100%">
+  <img src="docs/screenshots/architecture.png" alt="Automata architecture: Electron frontend, C++ backend, ChromeDriver, Chrome and NVIDIA AI" width="100%">
 </p>
 
 | Layer | Role |
