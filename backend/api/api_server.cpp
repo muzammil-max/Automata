@@ -1,5 +1,7 @@
 #include "api_server.h"
 #include "nvidia_client.h"
+#include "ai_provider_factory.h"
+#include "../settings/llm_settings.h"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -11,6 +13,7 @@ using namespace std;
 #include <memory>
 #include <atomic>
 #include <vector>
+#include <chrono>
 #include "../agent/agent.h" // agent.h already includes BrowserController, which close_browser() below uses
 #include <thread>
 // #include <wayland-egl-backend.h>
@@ -434,7 +437,30 @@ void server::create_run(const httplib::Request &req, httplib::Response &res)
         slim.status = old_run.status;
         slim.message = utf8_truncate(old_run.message, MAX_HISTORY_MESSAGE);
         slim.output = utf8_truncate(old_run.output, MAX_HISTORY_OUTPUT);
-        slim.steps = nlohmann::json::array();   // steps are far too noisy
+
+        // Keep only the action names. The agent uses them to remember whether
+        // the previous turn was a browser task, without sending noisy steps to
+        // the model (LLM clients only read message/output).
+        slim.steps = nlohmann::json::array();
+        if (old_run.steps.is_array())
+        {
+            for (const auto &step : old_run.steps)
+            {
+                if (!step.is_object())
+                {
+                    continue;
+                }
+                string action = step.value("action", string());
+                if (action.empty())
+                {
+                    continue;
+                }
+                nlohmann::json slim_step;
+                slim_step["action"] = action;
+                slim_step["status"] = step.value("status", string());
+                slim.steps.push_back(slim_step);
+            }
+        }
 
         history.insert(history.begin(), slim);
     }
@@ -493,7 +519,8 @@ void server::create_run(const httplib::Request &req, httplib::Response &res)
     {
         try
         {
-            NVIDIAClient nvidia;
+            LLMSettings llm_config = settings_store.get();
+            unique_ptr<LLMClient> llm_client = create_llm_client(llm_config);
 
             //
             // A NEW Agent oobject is created for every request (this is fine), but the
@@ -509,7 +536,7 @@ void server::create_run(const httplib::Request &req, httplib::Response &res)
             // Agent::run_task holds a lock for the whole task, so if two requests IMPORTAN!!!
             // arrive at the same time, the second one WAITS until the first task
             // is finished. (Two tasks must never control the same browser together.)
-            Agent agent(nvidia);
+            Agent agent(*llm_client);
 
             agent.cancel_flag = cancel_flag;
 
@@ -522,6 +549,29 @@ void server::create_run(const httplib::Request &req, httplib::Response &res)
 
                 string ignored;
                 storage.update_run(sessionID, snapshot, ignored);
+            };
+
+            // The chat answer is streamed token by token. Save the growing
+            // output at a modest rate so the UI can show chunks while the
+            // model is still writing (the run JSON is the transport).
+            auto last_partial_save = chrono::steady_clock::now();
+            agent.on_output = [this, sessionID, &run_copy, &last_partial_save](
+                                  const string &partial)
+            {
+                run_copy.output = partial;
+
+                auto now = chrono::steady_clock::now();
+                auto since = chrono::duration_cast<chrono::milliseconds>(
+                                 now - last_partial_save)
+                                 .count();
+                if (since < 50)
+                {
+                    return;
+                }
+                last_partial_save = now;
+
+                string ignored;
+                storage.update_run(sessionID, run_copy, ignored);
             };
 
             string response;
@@ -781,6 +831,47 @@ void server::browser_status(const httplib::Request &req, httplib::Response &res)
     res.set_content(result.dump(), "application/json");
 }
 
+void server::get_settings(const httplib::Request &req, httplib::Response &res)
+{
+    (void)req;
+    res.set_content(settings_store.public_json().dump(), "application/json");
+}
+
+void server::update_settings(const httplib::Request &req, httplib::Response &res)
+{
+    nlohmann::json input;
+    try
+    {
+        input = nlohmann::json::parse(req.body);
+    }
+    catch (const nlohmann::json::parse_error &)
+    {
+        nlohmann::json error;
+        error["error"] = "Invalid JSON";
+        res.status = 400;
+        res.set_content(error.dump(), "application/json");
+        return;
+    }
+
+    string error;
+    if (!settings_store.update_from_json(input, error))
+    {
+        nlohmann::json body;
+        body["error"] = error;
+        res.status = 400;
+        res.set_content(body.dump(), "application/json");
+        return;
+    }
+
+    res.set_content(settings_store.public_json().dump(), "application/json");
+}
+
+void server::get_providers(const httplib::Request &req, httplib::Response &res)
+{
+    (void)req;
+    res.set_content(SettingsStore::providers_json().dump(), "application/json");
+}
+
 void server::start()
 {
 
@@ -889,6 +980,36 @@ void server::start()
         [this](const httplib::Request &req, httplib::Response &res)
         {
             guard(res, [&] { browser_status(req, res); });
+        });
+
+    // Settings / provider routes (BYOK, local models, model choice)
+
+    serve.Get(
+        "/api/settings",
+        [this](const httplib::Request &req, httplib::Response &res)
+        {
+            guard(res, [&] { get_settings(req, res); });
+        });
+
+    serve.Put(
+        "/api/settings",
+        [this](const httplib::Request &req, httplib::Response &res)
+        {
+            guard(res, [&] { update_settings(req, res); });
+        });
+
+    serve.Post(
+        "/api/settings",
+        [this](const httplib::Request &req, httplib::Response &res)
+        {
+            guard(res, [&] { update_settings(req, res); });
+        });
+
+    serve.Get(
+        "/api/providers",
+        [this](const httplib::Request &req, httplib::Response &res)
+        {
+            guard(res, [&] { get_providers(req, res); });
         });
 
     cout << "Server runing on port 8080" << endl;
