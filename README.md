@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  Chat with an AI, let it drive a real Chrome browser, and watch it draw on web pages, all from one app.
+  Chat with an AI, let it drive a browser for you!
 </p>
 
 <p align="center">
