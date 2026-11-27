@@ -47,7 +47,7 @@
                                                    | port 9515            |
                                                    +----------------------+
                                                                 |
-                                                                | DevTools Protocol
+                                                                | DevT ools Protocol
                                                                 v
                                                    +----------------------+
                                                    |   CHROME / CHROMIUM |
