@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -36,6 +37,26 @@ public:
             response,
             error
         );
+    }
+
+    // Streaming variant used by the chat path. `on_delta` is called with each
+    // new piece of text; `response` always contains the full answer so far.
+    // The default implementation falls back to a normal request and emits the
+    // complete answer in one chunk (providers without SSE support).
+    virtual bool generate_response_stream(
+        const string& prompt,
+        const string& instructions,
+        const vector<RunData>& history,
+        string& response,
+        string& error,
+        const function<void(const string&)>& on_delta)
+    {
+        bool ok = generate_response(prompt, instructions, history, response, error);
+        if (ok && on_delta)
+        {
+            on_delta(response);
+        }
+        return ok;
     }
 
 

@@ -36,13 +36,16 @@ static wstring to_wide(const string &text)
     return wide;
 }
 
-HttpResponse http_request(const string &method,
-                          const string &url,
-                          const string &body,
-                          const string &content_type,
-                          const string &authorization,
-                          long connect_timeout_seconds,
-                          long total_timeout_seconds)
+static HttpResponse http_request_impl(
+    const string &method,
+    const string &url,
+    const string &body,
+    const string &content_type,
+    const string &authorization,
+    long connect_timeout_seconds,
+    long total_timeout_seconds,
+    const string &extra_headers,
+    const function<void(const string &)> *on_chunk)
 {
     HttpResponse out;
 
@@ -123,6 +126,10 @@ HttpResponse http_request(const string &method,
     {
         headers += L"Authorization: " + to_wide(authorization) + L"\r\n";
     }
+    if (!extra_headers.empty())
+    {
+        headers += to_wide(extra_headers);
+    }
 
     const void *body_ptr = body.empty() ? nullptr : body.data();
     DWORD body_len = static_cast<DWORD>(body.size());
@@ -176,6 +183,10 @@ HttpResponse http_request(const string &method,
             break;
         }
         out.body.append(buffer.data(), read);
+        if (on_chunk != nullptr && *on_chunk)
+        {
+            (*on_chunk)(string(buffer.data(), read));
+        }
     }
 
     out.ok = true;
@@ -185,6 +196,36 @@ HttpResponse http_request(const string &method,
     WinHttpCloseHandle(session);
 
     return out;
+}
+
+HttpResponse http_request(const string &method,
+                          const string &url,
+                          const string &body,
+                          const string &content_type,
+                          const string &authorization,
+                          long connect_timeout_seconds,
+                          long total_timeout_seconds,
+                          const string &extra_headers)
+{
+    return http_request_impl(method, url, body, content_type, authorization,
+                             connect_timeout_seconds, total_timeout_seconds,
+                             extra_headers, nullptr);
+}
+
+HttpResponse http_request_stream(
+    const string &method,
+    const string &url,
+    const string &body,
+    const string &content_type,
+    const string &authorization,
+    long connect_timeout_seconds,
+    long total_timeout_seconds,
+    const function<void(const string &)> &on_chunk,
+    const string &extra_headers)
+{
+    return http_request_impl(method, url, body, content_type, authorization,
+                             connect_timeout_seconds, total_timeout_seconds,
+                             extra_headers, &on_chunk);
 }
 
 void http_global_init() {}
@@ -205,13 +246,37 @@ static size_t write_body(void *contents, size_t size, size_t nmemb, void *user_d
     return total;
 }
 
-HttpResponse http_request(const string &method,
-                          const string &url,
-                          const string &body,
-                          const string &content_type,
-                          const string &authorization,
-                          long connect_timeout_seconds,
-                          long total_timeout_seconds)
+struct StreamSink
+{
+    string *body = nullptr;
+    const function<void(const string &)> *on_chunk = nullptr;
+};
+
+static size_t write_stream(void *contents, size_t size, size_t nmemb, void *user_data)
+{
+    size_t total = size * nmemb;
+    StreamSink *sink = static_cast<StreamSink *>(user_data);
+    if (sink->body != nullptr)
+    {
+        sink->body->append(static_cast<char *>(contents), total);
+    }
+    if (sink->on_chunk != nullptr && *sink->on_chunk)
+    {
+        (*sink->on_chunk)(string(static_cast<char *>(contents), total));
+    }
+    return total;
+}
+
+static HttpResponse http_request_impl(
+    const string &method,
+    const string &url,
+    const string &body,
+    const string &content_type,
+    const string &authorization,
+    long connect_timeout_seconds,
+    long total_timeout_seconds,
+    const string &extra_headers,
+    const function<void(const string &)> *on_chunk)
 {
     HttpResponse out;
 
@@ -233,8 +298,35 @@ HttpResponse http_request(const string &method,
         headers = curl_slist_append(headers,
                                     ("Authorization: " + authorization).c_str());
     }
+    if (!extra_headers.empty())
+    {
+        size_t start = 0;
+        while (start < extra_headers.size())
+        {
+            size_t end = extra_headers.find("\n", start);
+            string line = extra_headers.substr(
+                start, end == string::npos ? string::npos : end - start);
+            if (!line.empty() && line.back() == '\r')
+            {
+                line.pop_back();
+            }
+            if (!line.empty())
+            {
+                headers = curl_slist_append(headers, line.c_str());
+            }
+            if (end == string::npos)
+            {
+                break;
+            }
+            start = end + 1;
+        }
+    }
 
     char error_buffer[CURL_ERROR_SIZE] = {0};
+
+    StreamSink sink;
+    sink.body = &out.body;
+    sink.on_chunk = on_chunk;
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, method.c_str());
@@ -242,8 +334,16 @@ HttpResponse http_request(const string &method,
     {
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     }
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_body);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &out.body);
+    if (on_chunk != nullptr)
+    {
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_stream);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &sink);
+    }
+    else
+    {
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_body);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &out.body);
+    }
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, connect_timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, total_timeout_seconds);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
@@ -277,6 +377,36 @@ HttpResponse http_request(const string &method,
     curl_easy_cleanup(curl);
 
     return out;
+}
+
+HttpResponse http_request(const string &method,
+                          const string &url,
+                          const string &body,
+                          const string &content_type,
+                          const string &authorization,
+                          long connect_timeout_seconds,
+                          long total_timeout_seconds,
+                          const string &extra_headers)
+{
+    return http_request_impl(method, url, body, content_type, authorization,
+                             connect_timeout_seconds, total_timeout_seconds,
+                             extra_headers, nullptr);
+}
+
+HttpResponse http_request_stream(
+    const string &method,
+    const string &url,
+    const string &body,
+    const string &content_type,
+    const string &authorization,
+    long connect_timeout_seconds,
+    long total_timeout_seconds,
+    const function<void(const string &)> &on_chunk,
+    const string &extra_headers)
+{
+    return http_request_impl(method, url, body, content_type, authorization,
+                             connect_timeout_seconds, total_timeout_seconds,
+                             extra_headers, &on_chunk);
 }
 
 void http_global_init()

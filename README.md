@@ -13,11 +13,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Electron-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron">
+  <img src="https://img.shields.io/badge/Rust-20232A?style=flat-square&logo=rust&logo=github&logoColor=white" alt="Rust">
   <img src="https://img.shields.io/badge/C++17-00599C?style=flat-square&logo=cplusplus&logoColor=white" alt="C++17">
   <img src="https://img.shields.io/badge/Chrome%20%2F%20Chromium-4285F4?style=flat-square&logo=googlechrome&logoColor=white" alt="Chrome">
   <img src="https://img.shields.io/badge/NVIDIA%20Nemotron-76B900?style=flat-square&logo=nvidia&logoColor=white" alt="NVIDIA">
-  <img src="https://img.shields.io/badge/Node.js%2018%2B-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js">
 </p>
 
 <p align="center"><b>Supported platforms</b></p>
@@ -30,144 +29,162 @@
 
 ---
 
-## 📑 Table of Contents
-
-- [✨ What Can It Do?](#-what-can-it-do)
-- [🖥️ The Big Picture](#️-the-big-picture)
-- [🚀 Quick Start (Windows)](#-quick-start-windows)
-- [🧰 Supported Platforms](#-supported-platforms)
-- [🔑 Environment Variables](#-environment-variables)
-- [🗂️ Where Your Data Lives](#️-where-your-data-lives)
-- [🛠️ Building from Source](#️-building-from-source)
-- [🩺 Troubleshooting](#-troubleshooting)
-- [📸 Screenshots & Icons](#-screenshots--icons)
-- [📚 Documentation](#-documentation)
-- [📜 License](#-license)
-
----
-
-## ✨ What Can It Do?
-
-<table>
-  <tr>
-    <td align="center" width="33%">
-      <h3>💬 Chat</h3>
-      Talk to an AI brain powered by <b>NVIDIA Nemotron</b> like a friendly assistant. Works the moment you open the app.
-    </td>
-    <td align="center" width="33%">
-      <h3>🌐 Browse</h3>
-      Drives a <b>real Chrome / Chromium</b> browser through ChromeDriver to complete tasks on the internet for you.
-    </td>
-    <td align="center" width="33%">
-      <h3>🎨 Draw</h3>
-      Uses a canvas-aware <code>drag</code> action to <b>draw on web pages</b> during tasks.
-    </td>
-  </tr>
-</table>
-
-| | Feature | Details |
-| :-: | --- | --- |
-| ⚡ | **Zero-install option** | Single portable `.exe`, just double-click. |
-| 🔒 | **Local-first** | Backend runs on `127.0.0.1:8080`, so your chats stay on your machine. |
-| 🧠 | **Agent loop** | The AI plans, the browser acts, and it repeats up to a configurable action limit. |
-| 💾 | **Session history** | Every chat is saved as JSON so you can pick up where you left off. |
-| 📦 | **Batteries included** | Backend and ChromeDriver are bundled, so there is nothing else to install. |
-
----
-
 ## 🖥️ The Big Picture
 
-<p align="center">
-  <img src="docs/screenshots/architecture.png" alt="Automata architecture: Electron frontend, C++ backend, ChromeDriver, Chrome and NVIDIA AI" width="100%">
-</p>
+```
++----------------------+         HTTP/JSON         +----------------------+
+|  RUST UI (egui)      |  <------------------->   |   BACKEND (C++17)    |
+|  native desktop app  |        (port 8080)       |   api/, agent/,      |
+|  rust/automata-ui    |                           |   browser/, parser/, |
++----------------------+                           |   settings/, storage |
+                                                   +----------------------+
+                                                                |
+                                                   WebDriver wire protocol
+                                                                v
+                                                   +----------------------+
+                                                   | automata-browser     |
+                                                   | (Rust CDP engine)    |
+                                                   | port 9515            |
+                                                   +----------------------+
+                                                                |
+                                                                | DevTools Protocol
+                                                                v
+                                                   +----------------------+
+                                                   |   CHROME / CHROMIUM |
+                                                   +----------------------+
 
-| Layer | Role |
-| --- | --- |
-| **Frontend** | The desktop window you click: splash screen → chat → drawing tool. Built with Electron. |
-| **Backend** | A C++ program running a local HTTP server (`httplib`) on port `8080`. |
-| **Agent** | The part of the backend that talks to the AI and tells the browser what to do. |
+                          AI provider (cloud BYOK or local) <--- backend
+```
 
-**How a browser task works (simplified):**
+- **UI** = native Rust desktop window (egui/eframe). Fast, no browser engine, no Electron.
+- **Backend** = C++ program running a local HTTP server (httplib) on port `8080`.
+- **Browser engine** = Rust sidecar speaking the WebDriver wire protocol on port `9515`, implemented directly on the Chrome DevTools Protocol with `chromiumoxide`. It can also be replaced by a running ChromeDriver.
+- **Agent** = the part of the backend that talks to the AI and tells the browser what to do.
 
-1. 🗣️ You type a goal in the chat window.
-2. 📨 The frontend sends it to the backend on port `8080`.
-3. 🧠 The backend asks NVIDIA Nemotron what to do next, given the page and your goal.
-4. 🖱️ The backend runs that action (click, type, drag...) in Chrome through ChromeDriver.
-5. 🔁 Steps 3 and 4 repeat until the task is done or `AGENT_MAX_ACTIONS` is reached.
-6. ✅ The result comes back to your chat.
+The Electron frontend in `frontend/` is kept for the existing Windows packaging pipeline; the new native UI lives in `rust/automata-ui`.
 
 ---
 
-## 🚀 Quick Start (Windows)
+## 🔑 Providers, BYOK and Local Models
 
-### 1️⃣ Download
+Settings are stored in:
 
-Grab the latest build from the **[Releases page](https://github.com/muzammil-max/Automata/releases)**:
+- Linux/macOS: `~/.config/automata/config.json` (or `$XDG_CONFIG_HOME/automata/config.json`)
+- Windows: `%APPDATA%\Automata\config.json`
 
-| Build | Size | Best for |
-| --- | :-: | --- |
-| 📦 **`Automata-Portable-1.0.0.exe`** | 84.5 MB | Single file, no install. Just double-click. |
-| 💿 **`Automata-Setup-1.0.0.exe`** | 92.7 MB | Full installer with Start Menu and Desktop shortcuts. |
+The file is written with owner-only permissions on POSIX. API keys can also come from environment variables, so you never have to store them.
 
-### 2️⃣ One-time setup
+| Provider | Default model | Base URL | Key |
+| --- | --- | --- | --- |
+| `nvidia` | `nvidia/nemotron-3.5-super-vl-120b-a12b` | `https://integrate.api.nvidia.com/v1` | `NVIDIA_API_KEY` |
+| `openai` | `gpt-4o-mini` | `https://api.openai.com/v1` | `OPENAI_API_KEY` |
+| `anthropic` | `claude-3-5-sonnet-latest` | `https://api.anthropic.com/v1` | `ANTHROPIC_API_KEY` |
+| `gemini` | `gemini-1.5-flash` | `https://generativelanguage.googleapis.com/v1beta` | `GEMINI_API_KEY` |
+| `groq` | `llama-3.3-70b-versatile` | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` |
+| `openrouter` | `openai/gpt-4o-mini` | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` |
+| `ollama` | `llama3.1` | `http://127.0.0.1:11434/v1` | none (local) |
+| `lmstudio` | `local-model` | `http://127.0.0.1:1234/v1` | none (local) |
+| `custom` | any | your OpenAI-compatible URL | optional |
 
-| Step | What to do |
-| :-: | --- |
-| **1** | Run one of the EXEs. On first launch SmartScreen may warn you (unsigned build). Click **More info → Run anyway**. |
-| **2** | Install **[Google Chrome](https://www.google.com/chrome/)**. Its major version should roughly match the bundled ChromeDriver. |
-| **3** | Set your AI key (see below), then restart the app. Get a free key at [build.nvidia.com](https://build.nvidia.com). |
-| **4** | Allow the app through **Windows Firewall** when prompted (localhost only). |
+Settings API:
 
-**Set the API key** (pick one):
-
-```bat
-:: Persistent, recommended. Open a NEW terminal afterwards.
-setx NVIDIA_API_KEY "nvapi-xxxxxxxxxxxxxxxx"
-
-:: Current terminal session only
-set NVIDIA_API_KEY=nvapi-xxxxxxxxxxxxxxxx
+```
+GET  /api/settings
+PUT  /api/settings
+GET  /api/providers
 ```
 
-> 💡 **Tip:** Chat works immediately. Chrome is only needed for browser tasks.
+Example:
 
-### 3️⃣ What happens when you launch it
+```sh
+curl -X PUT http://127.0.0.1:8080/api/settings \
+  -H 'Content-Type: application/json' \
+  -d '{"provider":"ollama","model":"llama3.1",
+       "base_url":"http://127.0.0.1:11434/v1",
+       "temperature":0.7,"max_tokens":4096,"reasoning_effort":"high"}'
+```
 
-The packaged `Automata.exe` automatically:
+---
 
-1. ▶️ Starts the bundled C++ backend (`api_server.exe`), built natively for Windows with WinHTTP.
-2. ▶️ Starts the bundled `chromedriver.exe` if available.
-3. 🖼️ Loads the chat UI from the backend at `http://127.0.0.1:8080/`.
+## 🧰 Browser Tools
+
+The model can choose these actions (see `backend/instructions/instruction.cpp`):
+
+`navigate`, `go_back`, `go_forward`, `new_tab`, `reload`, `tabs`, `switch_tab`,
+`close_tab`, `click`, `double_click`, `right_click`, `hover`, `focus`, `clear`,
+`check`, `uncheck`, `type`, `extract`, `get_html`, `evaluate`, `scroll`,
+`scroll_into_view`, `press`, `select`, `wait`, `wait_for`, `wait_for_navigation`,
+`drag`, `switch_frame`, `upload_file`, `screenshot`, `cookies`, `set_cookie`,
+`delete_cookies`, `set_window_size`, `remember`, `close`, `finish`.
+
+---
+
+## 🛠️ Building from Source
+
+### Prerequisites
+
+- C++17 compiler (g++/clang++), `libcurl`, `pthread`
+- Rust 1.80+ and Cargo
+- Node.js 18+ only if you want the legacy Electron UI
+- Google Chrome or Chromium for browser tasks
+
+### Native Linux/macOS development build
+
+```sh
+# 1. Rust UI + CDP browser engine
+cd rust
+cargo build --release
+
+# 2. C++ backend
+cd ../backend
+g++ -std=c++17 -O2 -pthread \
+  main.cpp api/api_server.cpp api/nvidia_client.cpp \
+  api/openai_client.cpp api/anthropic_client.cpp api/gemini_client.cpp \
+  api/ai_provider_factory.cpp api/http_client.cpp \
+  agent/agent.cpp browser/browser_controller.cpp parser/parser.cpp \
+  storage/session_storage.cpp settings/llm_settings.cpp \
+  instructions/instruction.cpp \
+  -lcurl -o api_server
+
+# 3. Run the native UI (it starts the backend and browser engine)
+../rust/target/release/automata-ui
+```
+
+You can also start the pieces manually:
+
+```sh
+./backend/api_server                 # port 8080
+./rust/target/release/automata-browser   # port 9515
+```
+
+### Windows build (legacy packaging)
+
+```bat
+cd build\windows
+build.bat          REM backend + chromedriver + Electron installer/portable exe
+run.bat            REM development mode
+```
+
+Cross-build the backend from Linux/macOS:
+
+```sh
+cd build/windows
+chmod +x *.sh
+./build-backend.sh
+```
+
+The backend source list in `build/windows/build-backend.sh` already includes the
+new provider and settings files.
 
 ---
 
 ## 🧰 Supported Platforms
 
-<table align="center">
-  <tr>
-    <th></th>
-    <th>Platform</th>
-    <th>Status</th>
-    <th>Notes</th>
-  </tr>
-  <tr>
-    <td align="center"><img src="https://cdn.jsdelivr.net/npm/simple-icons@11/icons/windows.svg" width="28" height="28" alt="Windows"></td>
-    <td><b>Windows</b> (x64)</td>
-    <td>✅ <b>Fully supported</b></td>
-    <td>Native build via MSYS2 or zig cross-compile. Portable and installer.</td>
-  </tr>
-  <tr>
-    <td align="center"><img src="https://cdn.jsdelivr.net/npm/simple-icons@11/icons/linux.svg" width="28" height="28" alt="Linux"></td>
-    <td><b>Linux</b> (x64)</td>
-    <td>⚠️ <b>Dev only</b></td>
-    <td>Backend uses Linux <code>curl</code>. Run with the <code>Automata</code> launcher script.</td>
-  </tr>
-  <tr>
-    <td align="center"><img src="https://cdn.jsdelivr.net/npm/simple-icons@11/icons/apple.svg" width="28" height="28" alt="macOS"></td>
-    <td><b>macOS</b></td>
-    <td>❌ <b>Not supported</b></td>
-    <td>Cross-building from macOS is supported, but the app itself does not run on it.</td>
-  </tr>
-</table>
+| Platform | State |
+| --- | --- |
+| **Linux** (x64) | ✅ Native Rust UI + C++ backend + Rust CDP engine. |
+| **Windows** (x64) | ✅ Backend cross-build supported; Electron packaging retained. |
+| **macOS** | ⚠️ Backend uses libcurl and may build; not officially tested. |
 
 ---
 
@@ -175,139 +192,49 @@ The packaged `Automata.exe` automatically:
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `NVIDIA_API_KEY` | 🔐 NVIDIA AI key (the agent's brain). **Required.** | none |
+| `NVIDIA_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY` | Provider keys when no key is stored in settings. | – |
+| `AUTOMATA_BACKEND` | Path to the `api_server` binary for the Rust UI. | Auto-detected |
+| `AUTOMATA_BROWSER_BIN` | Path to the `automata-browser` binary. | Auto-detected |
+| `AUTOMATA_BROWSER_PORT` | Port for the Rust CDP engine. | `9515` |
 | `CHROME_PATH` / `CHROMIUM_PATH` | Browser binary to drive. | Auto-detected |
-| `CHROMEDRIVER_URL` | ChromeDriver address. | `http://127.0.0.1:9515` |
-| `CHROMEDRIVER_BIN` | ChromeDriver binary. | Auto-detected |
-| `AGENT_MAX_ACTIONS` | Max actions the agent may take per task. | `100` |
-
----
-
-## 🗂️ Where Your Data Lives
-
-```text
-%APPDATA%\Automata\
-├── storage\
-│   └── sessions\*.json     <- chat history
-├── automata.log            <- app logs
-└── backend.log             <- backend output
-```
-
----
-
-## 🛠️ Building from Source
-
-<details>
-<summary><b>🪟 Native Windows build (on Windows)</b></summary>
-
-<br>
-
-**Requires:** [Node.js 18+](https://nodejs.org) and [MSYS2](https://www.msys2.org) with `mingw-w64-x86_64-gcc`.
-
-```bat
-cd build\windows
-build.bat          REM backend + chromedriver + installer/portable exe
-run.bat            REM development mode (backend + Electron)
-```
-
-</details>
-
-<details>
-<summary><b>🐧 Cross-build from Linux / macOS</b></summary>
-
-<br>
-
-```sh
-cd build/windows
-chmod +x *.sh
-./cross-build.sh   # uses zig cc/c++ to build api_server.exe for Windows
-```
-
-</details>
-
-**Output:**
-
-```text
-build/windows/dist/
-├── Automata-Portable-1.0.0.exe   <- single double-click exe
-└── Automata-Setup-1.0.0.exe      <- installer
-```
-
-Full instructions: [`build/windows/README.md`](build/windows/README.md)
-
----
-
-## 🩺 Troubleshooting
-
-<details>
-<summary><b>The AI doesn't answer / "missing API key"</b></summary>
-
-<br>
-
-Make sure `NVIDIA_API_KEY` is set, then **fully restart** the app. If you used `setx`, open a new terminal first.
-
-</details>
-
-<details>
-<summary><b>Browser tasks fail to start</b></summary>
-
-<br>
-
-Install Google Chrome, and keep its major version close to the bundled ChromeDriver. You can also point to a specific browser with `CHROME_PATH`.
-
-</details>
-
-<details>
-<summary><b>Windows SmartScreen blocks the app</b></summary>
-
-<br>
-
-The build is unsigned. Click **More info → Run anyway**.
-
-</details>
-
-<details>
-<summary><b>The UI is blank or won't load</b></summary>
-
-<br>
-
-Check that nothing else is using port `8080`, and look at `%APPDATA%\Automata\backend.log` for errors.
-
-</details>
+| `CHROMEDRIVER_URL` | Driver address (Rust engine or ChromeDriver). | `http://127.0.0.1:9515` |
+| `CHROMEDRIVER_BIN` | ChromeDriver binary (legacy path). | Auto-detected |
+| `AUTOMATA_HOME_URL` | Page opened when the browser starts. | `https://automata-app.vercel.app` |
+| `AGENT_MAX_ACTIONS` | Max actions per task. | `100` |
+| `AGENT_TYPE_CHUNK` | Bytes per typing chunk (40–2000). | `40` |
 
 ---
 
 ## 📸 Screenshots & Icons
 
-<table align="center">
-  <tr>
-    <th align="center">🪟 Windows window icon</th>
-    <th align="center">🐧 Linux icon</th>
-  </tr>
-  <tr>
-    <td align="center"><img src="docs/screenshots/windows-icon.png" alt="Automata Windows icon" width="140"></td>
-    <td align="center"><img src="docs/screenshots/linux-icon.png" alt="Automata Linux icon" width="140"></td>
-  </tr>
-</table>
+### 🖼️ Visuals
 
-<p align="center"><sub>Captured from the packaged Windows build.</sub></p>
+**Windows — main chat window (packaged build):**
+
+![Automata Windows app window](docs/screenshots/windows-portable-launch.png)
+
+**Windows — splash screen:**
+
+![Automata Windows splash](docs/screenshots/windows-splash.png)
+
+### 🪟 Icons
+
+| Windows window icon | Linux icon |
+| --- | --- |
+| ![Automata window icon](docs/screenshots/windows-icon.png) | ![Automata Linux icon](docs/screenshots/linux-icon.png) |
+
+Captured from the packaged Windows build.
 
 ---
 
 ## 📚 Documentation
 
-| Doc | What's inside |
-| --- | --- |
-| 📖 [`docs/BACKEND_GUIDE.md`](docs/BACKEND_GUIDE.md) | Beginner-friendly walkthrough of every backend file. |
-| 🎨 [`backend/README_DRAG_TOOL.md`](backend/README_DRAG_TOOL.md) | Drawing tool details. |
-| 🪟 [`build/windows/README.md`](build/windows/README.md) | Windows build instructions. |
+- [`docs/BACKEND_GUIDE.md`](docs/BACKEND_GUIDE.md) — detailed walkthrough of every backend file.
+- [`backend/README_DRAG_TOOL.md`](backend/README_DRAG_TOOL.md) — drawing tool details.
+- [`build/windows/README.md`](build/windows/README.md) — Windows build instructions.
 
 ---
 
 ## 📜 License
 
-Released under the **MIT License**.
-
-<p align="center">
-  <sub>Made with ❤️ by <a href="https://github.com/muzammil-max">muzammil-max</a> · If Automata helps you, give it a ⭐</sub>
-</p>
+MIT

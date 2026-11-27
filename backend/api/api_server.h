@@ -2,6 +2,7 @@
 
 #include "../libraries/httplib.h"
 #include "../storage/session_storage.h"
+#include "../settings/llm_settings.h"
 
 using namespace std;
 
@@ -11,6 +12,8 @@ private:
     httplib::Server serve;
 
     SessionStorage storage;
+    SettingsStore settings_store;
+
     void close_browser(const httplib::Request &req, 
         httplib::Response &res);
 
@@ -50,6 +53,21 @@ private:
     );
 
     void stop_run(
+        const httplib::Request& req,
+        httplib::Response& res
+    );
+
+    void get_settings(
+        const httplib::Request& req,
+        httplib::Response& res
+    );
+
+    void update_settings(
+        const httplib::Request& req,
+        httplib::Response& res
+    );
+
+    void get_providers(
         const httplib::Request& req,
         httplib::Response& res
     );

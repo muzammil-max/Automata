@@ -51,6 +51,10 @@ class Agent
   
     function<void(const RunData&)> on_step;
 
+    // Called while the chat answer is being streamed. The string is the full
+    // partial answer so far, not just the newest chunk.
+    function<void(const string&)> on_output;
+
     bool run_task ( //the entire task like brwoser
         const string& user_prompt,
         const vector<RunData>& history,

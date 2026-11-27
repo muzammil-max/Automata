@@ -204,6 +204,205 @@ bool Agent::execute_action(
         if (success)
             result = "Went back to the previous page.";
     }
+    else if (action.action == "go_forward")
+    {
+        success = browser.go_forward(error);
+        if (success)
+            result = "Went forward to the next page.";
+    }
+    else if (action.action == "hover")
+    {
+        success = browser.hover(action.target, error);
+        if (success)
+            result = "Hovered over the element.";
+    }
+    else if (action.action == "double_click")
+    {
+        success = browser.double_click(action.target, error);
+        if (success)
+            result = "Double-click completed.";
+    }
+    else if (action.action == "right_click")
+    {
+        success = browser.right_click(action.target, error);
+        if (success)
+            result = "Right-click completed (context menu may be open).";
+    }
+    else if (action.action == "focus")
+    {
+        success = browser.focus_element(action.target, error);
+        if (success)
+            result = "Element focused.";
+    }
+    else if (action.action == "clear")
+    {
+        success = browser.clear_element(action.target, error);
+        if (success)
+            result = "Element cleared.";
+    }
+    else if (action.action == "check")
+    {
+        success = browser.set_checked(action.target, true, error);
+        if (success)
+            result = "Checkbox/radio is now checked.";
+    }
+    else if (action.action == "uncheck")
+    {
+        success = browser.set_checked(action.target, false, error);
+        if (success)
+            result = "Checkbox is now unchecked.";
+    }
+    else if (action.action == "scroll_into_view")
+    {
+        success = browser.scroll_into_view(action.target, error);
+        if (success)
+            result = "Element scrolled into view.";
+    }
+    else if (action.action == "get_html")
+    {
+        string html;
+        success = browser.get_html(action.target, html, error);
+        if (success)
+        {
+            html = utf8_truncate(html, 6000);
+            result = "Element HTML:\n" + html;
+            did_read = true;
+        }
+    }
+    else if (action.action == "evaluate")
+    {
+        string response_body;
+        success = browser.execute_script(action.value, "[]", response_body, error);
+        if (success)
+        {
+            string value_text = response_body;
+            try
+            {
+                nlohmann::json value =
+                    nlohmann::json::parse(response_body).at("value");
+                value_text = value.is_string() ? value.get<string>() : value.dump();
+            }
+            catch (...)
+            {
+            }
+            value_text = utf8_truncate(value_text, 6000);
+            result = "JavaScript result:\n" + value_text;
+            did_read = true;
+        }
+    }
+    else if (action.action == "tabs")
+    {
+        vector<string> tabs;
+        int active = 0;
+        success = browser.list_tabs(tabs, active, error);
+        if (success)
+        {
+            result = "Open tabs:\n";
+            for (size_t i = 0; i < tabs.size(); i++)
+            {
+                result += to_string(i) + ": " + tabs[i];
+                if (static_cast<int>(i) == active)
+                    result += " (active)";
+                result += "\n";
+            }
+        }
+    }
+    else if (action.action == "switch_tab")
+    {
+        success = browser.switch_tab(action.target, error);
+        if (success)
+        {
+            result = "Switched to tab " + action.target + ".";
+            did_open = true;
+            capture_page_text("");
+        }
+    }
+    else if (action.action == "close_tab")
+    {
+        success = browser.close_tab(action.target, error);
+        if (success)
+            result = "Tab closed.";
+    }
+    else if (action.action == "cookies")
+    {
+        string cookies;
+        success = browser.get_cookies(cookies, error);
+        if (success)
+        {
+            cookies = utf8_truncate(cookies, 6000);
+            result = "Cookies:\n" + cookies;
+            did_read = true;
+        }
+    }
+    else if (action.action == "set_cookie")
+    {
+        success = browser.set_cookie(action.value, error);
+        if (success)
+            result = "Cookie set.";
+    }
+    else if (action.action == "delete_cookies")
+    {
+        success = browser.delete_cookies(error);
+        if (success)
+            result = "All cookies deleted.";
+    }
+    else if (action.action == "upload_file")
+    {
+        success = browser.upload_file(action.target, action.value, error);
+        if (success)
+            result = "File attached to the input.";
+    }
+    else if (action.action == "screenshot")
+    {
+        string saved;
+        success = browser.screenshot(action.value, saved, error);
+        if (success)
+            result = "Screenshot saved to " + saved;
+    }
+    else if (action.action == "set_window_size")
+    {
+        string size = action.value;
+        for (char &c : size)
+        {
+            if (c == 'x' || c == 'X' || c == ';')
+                c = ',';
+        }
+        size_t comma = size.find(',');
+        try
+        {
+            if (comma == string::npos)
+                throw runtime_error("bad");
+            int width = stoi(size.substr(0, comma));
+            int height = stoi(size.substr(comma + 1));
+            success = browser.set_window_size(width, height, error);
+            if (success)
+                result = "Window resized to " + to_string(width) + "x" +
+                         to_string(height) + ".";
+        }
+        catch (...)
+        {
+            error = "set_window_size needs value like 1280,900";
+            success = false;
+        }
+    }
+    else if (action.action == "wait_for_navigation")
+    {
+        int timeout_ms = 5000;
+        if (!action.value.empty())
+        {
+            try
+            {
+                timeout_ms = stoi(action.value);
+            }
+            catch (...)
+            {
+                timeout_ms = 5000;
+            }
+        }
+        success = browser.wait_for_navigation(timeout_ms, error);
+        if (success)
+            result = "Navigation/wait finished.";
+    }
     else if (action.action == "new_tab")
     {
         // Opens a second tab; it becomes the active one!!!!
@@ -623,80 +822,167 @@ static bool contains_whole_word(const string &haystack, const string &word)
     return false;
 }
 
-static bool task_needs_browser(const string &prompt)
+static bool contains_word_or_phrase(const string &haystack, const string &needle)
 {
-    string p = to_lower_copy(prompt);
+    if (needle.empty())
+    {
+        return false;
+    }
+    if (needle.find(' ') != string::npos || needle.find('-') != string::npos ||
+        needle.find('.') != string::npos)
+    {
+        return haystack.find(needle) != string::npos;
+    }
+    return contains_whole_word(haystack, needle);
+}
 
-    // A real URL is the strongest signal.
+static bool contains_any(const string &haystack,
+                         std::initializer_list<const char *> needles)
+{
+    for (const char *needle : needles)
+    {
+        if (contains_word_or_phrase(haystack, needle))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+// A real URL, or a domain such as example.com / docs.rs.
+static bool has_url_or_domain(const string &p)
+{
     if (p.find("http://") != string::npos ||
         p.find("https://") != string::npos ||
         p.find("www.") != string::npos)
     {
         return true;
     }
-    // curl" contains "url".
-    if (contains_whole_word(p, "url") ||
-        contains_whole_word(p, "search") ||
-        contains_whole_word(p, "form") ||
-        contains_whole_word(p, "tab"))
+
+    static const char *tlds[] = {
+        ".com", ".org", ".net", ".io", ".dev", ".ai", ".app", ".co",
+        ".edu", ".gov", ".me", ".xyz", ".site", ".online", ".tech",
+        ".store", ".blog", ".page", ".link", ".live", ".news", ".world",
+        ".today", ".space", ".website", ".info", ".biz", ".tv", ".gg",
+        ".us", ".uk", ".pk", ".de", ".fr", ".in", ".au", ".ca"};
+
+    for (const char *tld : tlds)
     {
-        // These are only strong signals in a web context.
-        if (contains_whole_word(p, "url") ||
-            p.find("search for") != string::npos ||
-            p.find("search the web") != string::npos ||
-            p.find("search online") != string::npos ||
-            p.find("web form") != string::npos ||
-            p.find("fill out") != string::npos ||
-            p.find("fill in") != string::npos ||
-            p.find("new tab") != string::npos ||
-            p.find("browser tab") != string::npos)
+        string needle(tld);
+        size_t pos = 0;
+        while ((pos = p.find(needle, pos)) != string::npos)
+        {
+            bool left_ok = pos > 0 &&
+                           (isalnum(static_cast<unsigned char>(p[pos - 1])) ||
+                            p[pos - 1] == '-');
+            size_t after = pos + needle.size();
+            bool right_ok = after >= p.size() ||
+                            !isalnum(static_cast<unsigned char>(p[after]));
+            if (left_ok && right_ok)
+            {
+                return true;
+            }
+            pos = after;
+        }
+    }
+    return false;
+}
+
+static bool looks_like_question(const string &p)
+{
+    if (p.find('?') != string::npos)
+    {
+        return true;
+    }
+
+    size_t start = p.find_first_not_of(" \t\r\n");
+    if (start == string::npos)
+    {
+        return false;
+    }
+    string head = p.substr(start);
+
+    static const char *prefixes[] = {
+        "what", "why", "how", "who", "when", "where", "which", "whose",
+        "whom", "can you", "could you", "would you", "will you",
+        "do you", "does ", "did ", "is ", "are ", "am ", "should ",
+        "shall ", "may ", "might ", "explain", "define", "describe",
+        "tell me", "give me", "summarize", "translate", "calculate",
+        "solve", "help me", "i want to know", "i need to know",
+        "please explain", "please tell", "what's", "who's", "how's"};
+
+    for (const char *prefix : prefixes)
+    {
+        if (head.rfind(prefix, 0) == 0)
         {
             return true;
         }
     }
+    return false;
+}
 
-    const char *browser_words[] = {
-        "go to", "open the", "open a", "open this", "open website",
-        "navigate", "browse", "browser", "website", "web site",
-        "webpage", "web page", "on the internet", "online",
-        "search for", "search the web", "search online",
-        "google", "duckduckgo", "bing ", "click", "scroll",
-        "download", "upload", "login", "log in", "sign in", "sign up",
-        "notepad", "html viewer", "html editor", "code editor",
-        "codepen", "jsfiddle", "w3schools", "youtube", "wikipedia",
-        "new tab", "browser tab", "type into", "fill in", "fill out",
-        "find me", "amazon", "linkedin", "instagram", "facebook",
-        "twitter", "gmail", "outlook",
-        ".com", ".org", ".net", ".io", ".dev", ".ai", // ai helped in this!
+static bool references_current_page(const string &p)
+{
+    return contains_any(p,
+                        {"the page", "this page", "that page", "current page",
+                         "the website", "this website", "that website",
+                         "current website", "the site", "this site",
+                         "the webpage", "this webpage", "that webpage",
+                         "the web page", "this web page", "the article",
+                         "this article", "the heading", "the main heading",
+                         "the title", "the content", "the text on",
+                         "the form", "this form", "the editor", "this editor",
+                         "the code", "this code", "that code", "the tab",
+                         "this tab", "in the browser", "on the page",
+                         "on this page", "on screen"});
+}
 
-        // Drawing / art tasks: user says "draw" -> agent must use the
-        // browser drawing tool (canvas / paint app), not just chat.
-        "draw", "sketch", "sketchy", "paint", "painting", "canvas",
-        "whiteboard", "doodle", "drawing"}; // drawing words -> browser task
+static bool references_edit_target(const string &p)
+{
+    return contains_any(p,
+                        {"it", "this", "that", "the code", "this code",
+                         "that code", "the current code", "the page",
+                         "this page", "the editor", "the form",
+                         "the website", "the button", "the heading",
+                         "the text", "the title", "the color", "the colour",
+                         "the font", "the background", "the border",
+                         "the image", "the link", "the section",
+                         "the paragraph", "the layout", "the note",
+                         "the notes", "the document", "the canvas",
+                         "the drawing"});
+}
 
-    // const char *browser_words[] = {
-    //     "go to", "open the", "open a", "open this", "open website",
-    //     "navigate", "browse", "browser", "website", "web site",
-    //     "webpage", "web page", "on the internet", "online",
-    //     "search for", "search the web", "search online",
-    //     "google", "duckduckgo", "bing ", "click", "scroll",
-    //     "download", "upload", "login", "log in", "sign in", "sign up",
-    //     "notepad", "html viewer", "html editor", "code editor",
-    //     "codepen", "jsfiddle", "w3schools", "youtube", "wikipedia",
-    //     "new tab", "browser tab", "type into", "fill in", "fill out",
-    //     "find me", "amazon", "linkedin", "instagram", "facebook",
-    //     "twitter", "gmail", "outlook",
-    //     ".com", ".org", ".net", ".io", ".dev", ".ai"
-    // };
-
-    for (const char *word : browser_words)
+static bool run_used_browser(const RunData &run)
+{
+    if (!run.steps.is_array())
     {
-        if (p.find(word) != string::npos)
+        return false;
+    }
+    for (const auto &step : run.steps)
+    {
+        if (!step.is_object())
+        {
+            continue;
+        }
+        string action = step.value("action", string());
+        if (!action.empty() && action != "chat" && action != "browser_reuse")
         {
             return true;
         }
     }
+    return false;
+}
 
+static bool last_run_used_browser(const vector<RunData> &history)
+{
+    for (auto it = history.rbegin(); it != history.rend(); ++it)
+    {
+        if (it->message.empty())
+        {
+            continue;
+        }
+        return run_used_browser(*it);
+    }
     return false;
 }
 
@@ -704,33 +990,192 @@ static bool prompt_is_edit_followup(const string &prompt)
 {
     string p = to_lower_copy(prompt);
 
-    const char *phrases[] = {
-        "make some changes", "make changes", "make a change", "make it",
-        "make the", "change the", "change it", "change this", "change that",
-        "change the code", "change this code", "change that code",
-        "update the code", "update this code", "edit the code", "edit this code",
-        "fix the code", "fix this code", "add to the code", "add to this code",
-        "modify", "edit the", "edit it", "update the", "update it",
-        "add a", "add an", "add another", "add some", "remove the",
-        "remove this", "delete the", "replace the", "insert ",
-        "fix the", "fix it", "improve the", "adjust the", "style the",
-        "style it", "center the", "align the", "rename the", "resize"};
-
-    for (const char *phrase : phrases)
+    if (looks_like_question(p))
     {
-        if (p.find(phrase) != string::npos)
-        {
-            return true;
-        }
+        return false;
     }
 
-    // Catch the singular/plural forms of the most common change verbs.
-    if (p.find("change") != string::npos ||
-        contains_whole_word(p, "add") ||
-        contains_whole_word(p, "remove") ||
-        contains_whole_word(p, "delete") ||
-        contains_whole_word(p, "fix") ||
-        contains_whole_word(p, "edit"))
+    if (contains_any(p, {"explain", "what is", "what are", "who is",
+                         "who are", "define", "definition", "meaning of",
+                         "write a poem", "write a story", "write an essay",
+                         "write a letter", "write code", "write a program",
+                         "write a function", "tell me a joke", "recipe"}))
+    {
+        return false;
+    }
+
+    bool edit_verb = contains_any(p, {"change", "edit", "update", "fix",
+                                      "modify", "add", "remove", "delete",
+                                      "replace", "insert", "rename", "resize",
+                                      "style", "center", "align", "improve",
+                                      "adjust", "make", "write", "type",
+                                      "fill", "enter", "compose", "draw",
+                                      "paint"});
+
+    if (!edit_verb)
+    {
+        return false;
+    }
+
+    if (references_edit_target(p) || references_current_page(p))
+    {
+        return true;
+    }
+
+    return contains_any(p, {"heading", "button", "text", "color", "colour",
+                            "font", "background", "border", "image", "link",
+                            "section", "paragraph", "title", "layout",
+                            "code", "page", "editor", "form", "input",
+                            "box", "element", "menu", "tab", "bug"});
+}
+
+// Decides whether a message belongs to the browser agent or the chat model.
+// The conversation history is important: a short command such as "make it
+// blue" only makes sense in the browser when the previous run was a browser
+// task. A plain question always stays in chat unless it names a live page.
+static bool task_needs_browser(const string &prompt,
+                               const vector<RunData> &history,
+                               bool browser_running)
+{
+    string p = to_lower_copy(prompt);
+
+    // An explicit request to keep the answer in chat wins.
+    if (contains_any(p, {"in chat", "in this chat", "in the chat",
+                         "here in chat", "don't open", "do not open",
+                         "without opening", "no browser", "don't browse",
+                         "do not browse", "just answer", "just tell me",
+                         "answer in chat", "keep it in chat",
+                         "don't use the browser", "do not use the browser"}))
+    {
+        return false;
+    }
+
+    // A URL / domain is the strongest browser signal.
+    if (has_url_or_domain(p))
+    {
+        return true;
+    }
+
+    // Direct commands that name the browser itself.
+    if (contains_any(p, {"open the browser", "open a browser", "use the browser",
+                         "in the browser", "search the web", "search online",
+                         "search the internet", "go online", "browse the web",
+                         "open a website", "open website", "new tab",
+                         "browser tab", "switch tab", "close tab",
+                         "reload the page", "refresh the page"}))
+    {
+        return true;
+    }
+
+    bool web_object = contains_any(
+        p, {"website", "web site", "webpage", "web page", "browser",
+            "url", "hyperlink", "search box", "search bar", "input field",
+            "text box", "online notepad", "notepad", "text editor",
+            "code editor", "html editor", "html viewer", "web app",
+            "web application", "canvas", "whiteboard", "paint app",
+            "drawing app", "google", "duckduckgo", "youtube", "wikipedia",
+            "gmail", "outlook", "amazon", "linkedin", "instagram",
+            "facebook", "twitter", "codepen", "jsfiddle", "w3schools",
+            "github", "stack overflow", "the form", "this form"});
+
+    bool action = contains_any(
+        p, {"open", "go to", "goto", "navigate", "browse", "visit", "search",
+            "look up", "find", "click", "double click", "right click",
+            "hover", "scroll", "type", "write", "fill", "enter", "select",
+            "press", "upload", "download", "screenshot", "draw", "paint",
+            "sketch", "login", "log in", "sign in", "sign up", "submit",
+            "reload", "refresh", "switch", "close", "go back", "go forward",
+            "extract", "read", "summarize", "copy", "save", "change", "edit",
+            "update", "fix", "add", "remove", "delete", "replace", "insert",
+            "rename", "resize", "style", "center", "align", "improve",
+            "adjust", "make"});
+
+    bool question = looks_like_question(p);
+    bool chat_intent = contains_any(
+        p, {"explain", "what is", "what are", "what does", "what do",
+            "what's", "who is", "who are", "why", "how does", "how do",
+            "how to", "define", "definition", "meaning of",
+            "difference between", "tell me about", "describe", "summarize",
+            "summary", "translate", "write a poem", "write a story",
+            "write an essay", "write a letter", "write code",
+            "write a program", "write a function", "give me an example",
+            "example of", "can you explain", "help me understand",
+            "calculate", "solve", "tell me a joke", "recipe", "capital of",
+            "population of"});
+
+    bool direct_browser_action = contains_any(
+        p, {"click", "double click", "right click", "hover", "scroll",
+            "press", "type", "fill", "enter", "select", "upload",
+            "download", "screenshot", "drag", "switch tab", "close tab",
+            "go back", "go forward", "reload", "refresh", "navigate",
+            "browse", "visit", "login", "log in", "sign in", "sign up",
+            "submit", "extract", "read", "copy", "save", "open the",
+            "open a", "go to", "goto", "search", "look up"});
+
+    bool last_browser = last_run_used_browser(history);
+
+    // A normal chat request stays in chat even if it mentions a website or a
+    // tool ("write a poem about a website", "explain how GitHub works").
+    if (chat_intent && !references_current_page(p))
+    {
+        return false;
+    }
+
+    // A named web object plus an action is a browser task.
+    if (web_object && action)
+    {
+        return true;
+    }
+    if (web_object && !question && !chat_intent)
+    {
+        return true;
+    }
+
+    // A question that points at the page that is already open should read it.
+    if (last_browser && browser_running && references_current_page(p))
+    {
+        return true;
+    }
+
+    // Short edit commands after a browser task continue in the browser.
+    if (last_browser && browser_running && prompt_is_edit_followup(p))
+    {
+        return true;
+    }
+
+    // "continue", "do it", "try again" after a browser task stays there.
+    if (last_browser && browser_running &&
+        contains_any(p, {"continue", "resume", "carry on", "go ahead",
+                         "proceed", "keep going", "finish it", "do it",
+                         "try again", "retry", "next step"}))
+    {
+        return true;
+    }
+
+    // Any direct browser action after a browser task stays in the browser:
+    // "click the second result", "scroll down", "press enter".
+    if (last_browser && browser_running && direct_browser_action && !question &&
+        !chat_intent)
+    {
+        return true;
+    }
+
+    // Questions and normal chat requests stay in chat.
+    if (chat_intent || question)
+    {
+        return false;
+    }
+
+    // Drawing tasks use the browser canvas tool.
+    if (contains_any(p, {"draw", "paint", "sketch", "doodle"}) &&
+        !question)
+    {
+        return true;
+    }
+
+    // Explicit browser history commands need a browser.
+    if (contains_any(p, {"go back", "go forward", "reload", "refresh"}) &&
+        (browser_running || last_browser))
     {
         return true;
     }
@@ -811,9 +1256,12 @@ bool Agent::run_task(
         }
     };
 
-    bool followup_edit = browser.is_running() &&
+    bool browser_running = browser.is_running();
+    bool last_browser = last_run_used_browser(history);
+    bool needs_browser =
+        task_needs_browser(user_prompt, history, browser_running);
+    bool followup_edit = needs_browser && browser_running && last_browser &&
                          prompt_is_edit_followup(user_prompt);
-    bool needs_browser = task_needs_browser(user_prompt) || followup_edit;
 
     if (!needs_browser)
     {
@@ -832,7 +1280,10 @@ bool Agent::run_task(
 
         chat_prompt += "USER MESSAGE:\n";
         chat_prompt += user_prompt;
-        chat_prompt += "\n\nReply directly to the user in plain text.\n";
+        chat_prompt += "\n\nReply directly to the user. Use Markdown when it "
+                       "makes the answer easier to read (bold, lists, code "
+                       "blocks) and LaTeX for math ($...$ inline, $$...$$ on "
+                       "its own line).\n";
         chat_prompt += "Reminder: you DO have browser tools (navigate, click, "
                        "type, extract, scroll, press, select, new_tab, drag, "
                        "switch_frame, reload). If the user asks for something "
@@ -840,15 +1291,43 @@ bool Agent::run_task(
                        "to send it as a direct command.";
 
         string answer;
-        if (!llm_client.generate_response(chat_prompt,
-                                          Instruction::get_chat_text(),
-                                          history, answer, error))
+        auto on_delta = [&](const string &)
+        {
+            final_output = answer;
+            if (on_output)
+            {
+                try
+                {
+                    on_output(answer);
+                }
+                catch (...)
+                {
+                    // A live-update problem must never kill the run.
+                }
+            }
+        };
+
+        if (!llm_client.generate_response_stream(chat_prompt,
+                                                 Instruction::get_chat_text(),
+                                                 history, answer, error,
+                                                 on_delta))
         {
             record_step("chat", "", "", "failed", "", error);
             return false;
         }
 
         final_output = answer;
+        current_run.output = final_output;
+        if (on_output)
+        {
+            try
+            {
+                on_output(answer);
+            }
+            catch (...)
+            {
+            }
+        }
         record_step("chat", "", "", "completed",
                     utf8_truncate(answer, 300), "");
         return true;
@@ -856,7 +1335,7 @@ bool Agent::run_task(
 
     string effective_prompt = user_prompt;
 
-    if (followup_edit && !task_needs_browser(user_prompt))
+    if (followup_edit)
     {
         effective_prompt =
             "CONTINUE THE BROWSER TASK THAT IS ALREADY OPEN.\n"

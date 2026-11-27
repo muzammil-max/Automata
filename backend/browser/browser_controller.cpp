@@ -483,22 +483,21 @@ bool BrowserController::start_browser(string &error)
     string status_body;
     if (!request_bhejo("GET", "/status", "", status_body, error))
     {
-        error = "ChromeDriver is not reachable at " + driver_url + " (" + error + "). Start chromedriver first.";
+        error = "Browser driver is not reachable at " + driver_url + " (" + error + "). Start the Automata browser engine or ChromeDriver first.";
         return false;
     }
 
-    // Make sure the browser program exists before asking the driver to use
-    // it. Without this check ChromeDriver could silently start a different
-    // browser and the user would see the wrong app.
-    if (browser_path.empty() || !path_is_executable(browser_path))
+    // If we found a browser program, tell the driver to use it. When the
+    // driver is the bundled Automata CDP engine it can also discover Chrome
+    // itself, so a missing binary is not fatal.
+    if (!browser_path.empty() && path_is_executable(browser_path))
     {
-        error = "Google Chrome was not found on this computer. Install Chrome, "
-                "or set CHROME_PATH to the Chrome program. Chromium is also "
-                "accepted as a fallback.";
-        return false;
+        cout << "Launching browser: " << browser_path << endl;
     }
-
-    cout << "Launching browser: " << browser_path << endl;
+    else
+    {
+        cout << "No explicit browser path; letting the driver find Chrome." << endl;
+    }
 
     nlohmann::json request;
 
@@ -506,8 +505,11 @@ bool BrowserController::start_browser(string &error)
     // The real program is selected by goog:chromeOptions.binary below.
     request["capabilities"]["alwaysMatch"]["browserName"] = "chrome";
 
-    request["capabilities"]["alwaysMatch"]["goog:chromeOptions"]["binary"] =
-        browser_path;
+    if (!browser_path.empty() && path_is_executable(browser_path))
+    {
+        request["capabilities"]["alwaysMatch"]["goog:chromeOptions"]["binary"] =
+            browser_path;
+    }
     request["capabilities"]["alwaysMatch"]["goog:chromeOptions"]["args"] =
         nlohmann::json::array({"--no-sandbox",
                                "--disable-dev-shm-usage",
@@ -1758,4 +1760,789 @@ bool BrowserController::extract_text(const string &selector, string &text, strin
         error = "I can't extract web page text!";
         return false;
     }
+}
+// ---------------------------------------------------------------
+// Extra tools: tabs, mouse variants, cookies, screenshots, uploads.
+// ---------------------------------------------------------------
+
+bool BrowserController::element_center(const string &element_id, double &x,
+                                       double &y, string &error)
+{
+    nlohmann::json ref;
+    ref[ELEMENT_KEY] = element_id;
+
+    nlohmann::json value;
+    string js_error;
+    if (!run_js(R"JS(
+            arguments[0].scrollIntoView({block: 'center', inline: 'center'});
+            const r = arguments[0].getBoundingClientRect();
+            return { x: r.left + r.width / 2, y: r.top + r.height / 2,
+                     width: r.width, height: r.height };
+        )JS",
+                nlohmann::json::array({ref}), value, js_error))
+    {
+        error = "Could not measure the element: " + js_error;
+        return false;
+    }
+
+    if (!value.is_object() || value.value("width", 0.0) <= 0 ||
+        value.value("height", 0.0) <= 0)
+    {
+        error = "The element is not visible (zero size).";
+        return false;
+    }
+
+    x = value.value("x", 0.0);
+    y = value.value("y", 0.0);
+    return true;
+}
+
+bool BrowserController::go_forward(string &error)
+{
+    if (session_url.empty())
+    {
+        error = "Browser is not running!";
+        return false;
+    }
+
+    string response;
+    if (!request_bhejo("POST", session_url + "/forward", "{}", response, error))
+    {
+        return false;
+    }
+
+    wait_until_loaded();
+    return true;
+}
+
+bool BrowserController::list_tabs(vector<string> &tabs, int &active_index,
+                                  string &error)
+{
+    tabs.clear();
+    active_index = 0;
+
+    if (session_url.empty())
+    {
+        error = "Browser is not running!";
+        return false;
+    }
+
+    string response;
+    if (!request_bhejo("GET", session_url + "/window/handles", "", response, error))
+    {
+        return false;
+    }
+
+    try
+    {
+        nlohmann::json handles = nlohmann::json::parse(response).at("value");
+        if (handles.is_array())
+        {
+            for (const auto &handle : handles)
+            {
+                tabs.push_back(handle.get<string>());
+            }
+        }
+    }
+    catch (const nlohmann::json::exception &)
+    {
+        error = "Could not read the list of tabs.";
+        return false;
+    }
+
+    string current;
+    if (request_bhejo("GET", session_url + "/window", "", current, error))
+    {
+        try
+        {
+            string handle = nlohmann::json::parse(current).at("value").get<string>();
+            for (size_t i = 0; i < tabs.size(); i++)
+            {
+                if (tabs[i] == handle)
+                {
+                    active_index = static_cast<int>(i);
+                    break;
+                }
+            }
+        }
+        catch (...)
+        {
+        }
+    }
+
+    return true;
+}
+
+bool BrowserController::switch_tab(const string &which, string &error)
+{
+    vector<string> tabs;
+    int active = 0;
+    if (!list_tabs(tabs, active, error))
+    {
+        return false;
+    }
+    if (tabs.empty())
+    {
+        error = "There are no open tabs.";
+        return false;
+    }
+
+    string handle;
+    string wanted = to_lower(which);
+    if (wanted.empty() || wanted == "next")
+    {
+        handle = tabs[(active + 1) % static_cast<int>(tabs.size())];
+    }
+    else if (wanted == "prev" || wanted == "previous")
+    {
+        handle = tabs[(active + static_cast<int>(tabs.size()) - 1) %
+                      static_cast<int>(tabs.size())];
+    }
+    else
+    {
+        bool numeric = !wanted.empty();
+        for (char c : wanted)
+        {
+            if (!isdigit(static_cast<unsigned char>(c)))
+            {
+                numeric = false;
+                break;
+            }
+        }
+
+        if (numeric)
+        {
+            int index = 0;
+            try
+            {
+                index = stoi(wanted);
+            }
+            catch (...)
+            {
+                numeric = false;
+            }
+            if (numeric)
+            {
+                if (index < 0 || index >= static_cast<int>(tabs.size()))
+                {
+                    error = "Tab index " + to_string(index) + " is out of range (" +
+                            to_string(tabs.size()) + " tabs).";
+                    return false;
+                }
+                handle = tabs[index];
+            }
+        }
+
+        if (handle.empty())
+        {
+            for (const string &tab : tabs)
+            {
+                if (tab == which)
+                {
+                    handle = tab;
+                    break;
+                }
+            }
+        }
+
+        if (handle.empty())
+        {
+            error = "No tab matches: " + which;
+            return false;
+        }
+    }
+
+    nlohmann::json body;
+    body["handle"] = handle;
+
+    string response;
+    if (!request_bhejo("POST", session_url + "/window", body.dump(), response, error))
+    {
+        return false;
+    }
+
+    wait_until_loaded();
+    return true;
+}
+
+bool BrowserController::close_tab(const string &which, string &error)
+{
+    if (!which.empty())
+    {
+        if (!switch_tab(which, error))
+        {
+            return false;
+        }
+    }
+
+    string response;
+    if (!request_bhejo("DELETE", session_url + "/window", "", response, error))
+    {
+        return false;
+    }
+
+    wait_until_loaded();
+    return true;
+}
+
+bool BrowserController::hover(const string &selector, string &error)
+{
+    string element_id;
+    if (!find_element_id(selector, element_id, error))
+    {
+        return false;
+    }
+
+    nlohmann::json ref;
+    ref[ELEMENT_KEY] = element_id;
+
+    nlohmann::json value;
+    string js_error;
+    if (!run_js(R"JS(
+            const el = arguments[0];
+            el.scrollIntoView({block: 'center', inline: 'center'});
+            const r = el.getBoundingClientRect();
+            const opts = { bubbles: true, cancelable: true,
+                           clientX: r.left + r.width / 2,
+                           clientY: r.top + r.height / 2 };
+            el.dispatchEvent(new MouseEvent('mouseover', opts));
+            el.dispatchEvent(new MouseEvent('mouseenter', opts));
+            el.dispatchEvent(new MouseEvent('mousemove', opts));
+            return true;
+        )JS",
+                nlohmann::json::array({ref}), value, js_error))
+    {
+        error = "Hover failed: " + js_error;
+        return false;
+    }
+
+    return true;
+}
+
+bool BrowserController::double_click(const string &selector, string &error)
+{
+    string element_id;
+    if (!find_element_id(selector, element_id, error))
+    {
+        return false;
+    }
+
+    double x = 0;
+    double y = 0;
+    if (!element_center(element_id, x, y, error))
+    {
+        return false;
+    }
+
+    auto px = [](double value)
+    {
+        return static_cast<long>(value < 0 ? value - 0.5 : value + 0.5);
+    };
+
+    nlohmann::json mouse_actions = nlohmann::json::array();
+    mouse_actions.push_back({{"type", "pointerMove"},
+                             {"duration", 0},
+                             {"x", px(x)},
+                             {"y", px(y)},
+                             {"origin", "viewport"}});
+    for (int i = 0; i < 2; i++)
+    {
+        mouse_actions.push_back({{"type", "pointerDown"}, {"button", 0}});
+        mouse_actions.push_back({{"type", "pointerUp"}, {"button", 0}});
+        mouse_actions.push_back({{"type", "pause"}, {"duration", 40}});
+    }
+
+    nlohmann::json request;
+    request["actions"] = nlohmann::json::array();
+    request["actions"].push_back({{"type", "pointer"},
+                                  {"id", "mouse"},
+                                  {"parameters", {{"pointerType", "mouse"}}},
+                                  {"actions", mouse_actions}});
+
+    string response;
+    if (!request_bhejo("POST", session_url + "/actions", request.dump(), response, error))
+    {
+        return false;
+    }
+
+    string ignored_body, ignored_error;
+    request_bhejo("DELETE", session_url + "/actions", "", ignored_body, ignored_error);
+
+    nlohmann::json ref;
+    ref[ELEMENT_KEY] = element_id;
+    nlohmann::json value;
+    string js_error;
+    run_js(R"JS(
+        arguments[0].dispatchEvent(new MouseEvent('dblclick',
+            { bubbles: true, cancelable: true }));
+        return true;
+    )JS",
+           nlohmann::json::array({ref}), value, js_error);
+
+    wait_until_loaded();
+    return true;
+}
+
+bool BrowserController::right_click(const string &selector, string &error)
+{
+    string element_id;
+    if (!find_element_id(selector, element_id, error))
+    {
+        return false;
+    }
+
+    double x = 0;
+    double y = 0;
+    if (!element_center(element_id, x, y, error))
+    {
+        return false;
+    }
+
+    auto px = [](double value)
+    {
+        return static_cast<long>(value < 0 ? value - 0.5 : value + 0.5);
+    };
+
+    nlohmann::json mouse_actions = nlohmann::json::array();
+    mouse_actions.push_back({{"type", "pointerMove"},
+                             {"duration", 0},
+                             {"x", px(x)},
+                             {"y", px(y)},
+                             {"origin", "viewport"}});
+    mouse_actions.push_back({{"type", "pointerDown"}, {"button", 2}});
+    mouse_actions.push_back({{"type", "pointerUp"}, {"button", 2}});
+
+    nlohmann::json request;
+    request["actions"] = nlohmann::json::array();
+    request["actions"].push_back({{"type", "pointer"},
+                                  {"id", "mouse"},
+                                  {"parameters", {{"pointerType", "mouse"}}},
+                                  {"actions", mouse_actions}});
+
+    string response;
+    if (!request_bhejo("POST", session_url + "/actions", request.dump(), response, error))
+    {
+        return false;
+    }
+
+    string ignored_body, ignored_error;
+    request_bhejo("DELETE", session_url + "/actions", "", ignored_body, ignored_error);
+
+    nlohmann::json ref;
+    ref[ELEMENT_KEY] = element_id;
+    nlohmann::json value;
+    string js_error;
+    run_js(R"JS(
+        const r = arguments[0].getBoundingClientRect();
+        arguments[0].dispatchEvent(new MouseEvent('contextmenu',
+            { bubbles: true, cancelable: true, button: 2,
+              clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }));
+        return true;
+    )JS",
+           nlohmann::json::array({ref}), value, js_error);
+
+    return true;
+}
+
+bool BrowserController::focus_element(const string &selector, string &error)
+{
+    string element_id;
+    if (!find_element_id(selector, element_id, error))
+    {
+        return false;
+    }
+
+    nlohmann::json ref;
+    ref[ELEMENT_KEY] = element_id;
+    nlohmann::json value;
+    string js_error;
+    if (!run_js(R"JS(
+            arguments[0].scrollIntoView({block: 'center'});
+            arguments[0].focus();
+            return true;
+        )JS",
+                nlohmann::json::array({ref}), value, js_error))
+    {
+        error = "Focus failed: " + js_error;
+        return false;
+    }
+    return true;
+}
+
+bool BrowserController::clear_element(const string &selector, string &error)
+{
+    string element_id;
+    if (!find_element_id(selector, element_id, error))
+    {
+        return false;
+    }
+
+    string response;
+    string http_error;
+    if (request_bhejo("POST", session_url + "/element/" + element_id + "/clear",
+                      "{}", response, http_error))
+    {
+        return true;
+    }
+
+    nlohmann::json ref;
+    ref[ELEMENT_KEY] = element_id;
+    nlohmann::json value;
+    string js_error;
+    if (!run_js(R"JS(
+            const el = arguments[0];
+            if (el.isContentEditable) { el.innerHTML = ''; }
+            else if ('value' in el) { el.value = ''; }
+            else { el.textContent = ''; }
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            return true;
+        )JS",
+                nlohmann::json::array({ref}), value, js_error))
+    {
+        error = "Clear failed: " + http_error;
+        return false;
+    }
+    return true;
+}
+
+bool BrowserController::set_checked(const string &selector, bool checked,
+                                    string &error)
+{
+    string element_id;
+    if (!find_element_id(selector, element_id, error))
+    {
+        return false;
+    }
+
+    nlohmann::json ref;
+    ref[ELEMENT_KEY] = element_id;
+    nlohmann::json args = nlohmann::json::array({ref, checked});
+    nlohmann::json value;
+    string js_error;
+    if (!run_js(R"JS(
+            const el = arguments[0];
+            const wanted = !!arguments[1];
+            el.scrollIntoView({block: 'center'});
+            if ('checked' in el && el.checked !== wanted) {
+                el.click();
+                if (el.checked !== wanted) { el.checked = wanted; }
+            }
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            return { checked: !!el.checked };
+        )JS",
+                args, value, js_error))
+    {
+        error = "Check failed: " + js_error;
+        return false;
+    }
+
+    bool actual = value.value("checked", checked);
+    if (actual != checked)
+    {
+        error = "The element did not change to the requested state.";
+        return false;
+    }
+    return true;
+}
+
+bool BrowserController::scroll_into_view(const string &selector, string &error)
+{
+    string element_id;
+    if (!find_element_id(selector, element_id, error))
+    {
+        return false;
+    }
+
+    nlohmann::json ref;
+    ref[ELEMENT_KEY] = element_id;
+    nlohmann::json value;
+    string js_error;
+    if (!run_js(R"JS(
+            arguments[0].scrollIntoView({block: 'center', inline: 'center'});
+            return true;
+        )JS",
+                nlohmann::json::array({ref}), value, js_error))
+    {
+        error = "Scroll into view failed: " + js_error;
+        return false;
+    }
+    return true;
+}
+
+bool BrowserController::get_html(const string &selector, string &html,
+                                 string &error)
+{
+    string actual = selector.empty() ? "body" : selector;
+    string element_id;
+    if (!find_element_id(actual, element_id, error))
+    {
+        return false;
+    }
+
+    nlohmann::json ref;
+    ref[ELEMENT_KEY] = element_id;
+    nlohmann::json value;
+    string js_error;
+    if (!run_js("return arguments[0].outerHTML;",
+                nlohmann::json::array({ref}), value, js_error))
+    {
+        error = "Could not read the HTML: " + js_error;
+        return false;
+    }
+
+    if (!value.is_string())
+    {
+        error = "The element has no HTML.";
+        return false;
+    }
+
+    html = value.get<string>();
+    return true;
+}
+
+bool BrowserController::upload_file(const string &selector,
+                                    const string &file_path, string &error)
+{
+    if (file_path.empty())
+    {
+        error = "File path cannot be empty!";
+        return false;
+    }
+
+    string element_id;
+    if (!find_element_id(selector, element_id, error))
+    {
+        return false;
+    }
+
+    nlohmann::json body;
+    body["text"] = file_path;
+
+    string response;
+    if (!request_bhejo("POST", session_url + "/element/" + element_id + "/value",
+                       body.dump(), response, error))
+    {
+        return false;
+    }
+    return true;
+}
+
+static string base64_decode(const string &input)
+{
+    static const string alphabet =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    int lookup[256];
+    for (int i = 0; i < 256; i++)
+    {
+        lookup[i] = -1;
+    }
+    for (int i = 0; i < 64; i++)
+    {
+        lookup[static_cast<unsigned char>(alphabet[i])] = i;
+    }
+
+    string output;
+    int buffer = 0;
+    int bits = 0;
+
+    for (char c : input)
+    {
+        if (c == '=')
+        {
+            break;
+        }
+        int value = lookup[static_cast<unsigned char>(c)];
+        if (value < 0)
+        {
+            continue;
+        }
+        buffer = (buffer << 6) | value;
+        bits += 6;
+        if (bits >= 8)
+        {
+            bits -= 8;
+            output.push_back(static_cast<char>((buffer >> bits) & 0xFF));
+        }
+    }
+
+    return output;
+}
+
+bool BrowserController::screenshot(const string &file_path, string &saved_path,
+                                   string &error)
+{
+    if (session_url.empty())
+    {
+        error = "Browser is not running!";
+        return false;
+    }
+
+    string response;
+    if (!request_bhejo("GET", session_url + "/screenshot", "", response, error))
+    {
+        return false;
+    }
+
+    string encoded;
+    try
+    {
+        encoded = nlohmann::json::parse(response).at("value").get<string>();
+    }
+    catch (const nlohmann::json::exception &)
+    {
+        error = "Could not read the screenshot data.";
+        return false;
+    }
+
+    string path = file_path;
+    if (path.empty())
+    {
+        auto now = chrono::system_clock::now().time_since_epoch();
+        auto ms = chrono::duration_cast<chrono::milliseconds>(now).count();
+        path = "automata-screenshot-" + to_string(ms) + ".png";
+    }
+
+    ofstream output(path, ios::binary | ios::trunc);
+    if (!output)
+    {
+        error = "Could not write the screenshot to " + path;
+        return false;
+    }
+
+    string png = base64_decode(encoded);
+    output.write(png.data(), static_cast<streamsize>(png.size()));
+    output.close();
+
+    saved_path = path;
+    return true;
+}
+
+bool BrowserController::wait_for_navigation(int timeout_ms, string &error)
+{
+    if (session_url.empty())
+    {
+        error = "Browser is not running!";
+        return false;
+    }
+    if (timeout_ms < 100)
+    {
+        timeout_ms = 100;
+    }
+    if (timeout_ms > 60000)
+    {
+        timeout_ms = 60000;
+    }
+
+    wait_until_loaded(timeout_ms);
+    return true;
+}
+
+bool BrowserController::get_cookies(string &cookies_json, string &error)
+{
+    if (session_url.empty())
+    {
+        error = "Browser is not running!";
+        return false;
+    }
+
+    string response;
+    if (!request_bhejo("GET", session_url + "/cookie", "", response, error))
+    {
+        return false;
+    }
+
+    try
+    {
+        cookies_json = nlohmann::json::parse(response).at("value").dump();
+        return true;
+    }
+    catch (const nlohmann::json::exception &)
+    {
+        error = "Could not read cookies.";
+        return false;
+    }
+}
+
+bool BrowserController::set_cookie(const string &cookie_json, string &error)
+{
+    if (session_url.empty())
+    {
+        error = "Browser is not running!";
+        return false;
+    }
+
+    nlohmann::json cookie;
+    try
+    {
+        cookie = nlohmann::json::parse(cookie_json);
+    }
+    catch (const nlohmann::json::exception &)
+    {
+        error = "Cookie must be a valid JSON object.";
+        return false;
+    }
+
+    if (!cookie.is_object() || !cookie.contains("name") ||
+        !cookie.contains("value"))
+    {
+        error = "Cookie needs at least name and value.";
+        return false;
+    }
+
+    nlohmann::json body;
+    body["cookie"] = cookie;
+
+    string response;
+    if (!request_bhejo("POST", session_url + "/cookie", body.dump(), response, error))
+    {
+        return false;
+    }
+    return true;
+}
+
+bool BrowserController::delete_cookies(string &error)
+{
+    if (session_url.empty())
+    {
+        error = "Browser is not running!";
+        return false;
+    }
+
+    string response;
+    if (!request_bhejo("DELETE", session_url + "/cookie", "", response, error))
+    {
+        return false;
+    }
+    return true;
+}
+
+bool BrowserController::set_window_size(int width, int height, string &error)
+{
+    if (session_url.empty())
+    {
+        error = "Browser is not running!";
+        return false;
+    }
+    if (width < 200 || width > 10000 || height < 200 || height > 10000)
+    {
+        error = "Window size must be between 200 and 10000 pixels.";
+        return false;
+    }
+
+    nlohmann::json body;
+    body["width"] = width;
+    body["height"] = height;
+
+    string response;
+    if (!request_bhejo("POST", session_url + "/window/rect", body.dump(),
+                       response, error))
+    {
+        return false;
+    }
+
+    wait_until_loaded();
+    return true;
 }

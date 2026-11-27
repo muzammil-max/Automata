@@ -78,19 +78,40 @@ bool ActionParser::parse_action(
         // Allowed actions
         if (action.action != "navigate" &&
             action.action != "go_back" &&
+            action.action != "go_forward" &&
             action.action != "new_tab" &&
             action.action != "reload" &&
             action.action != "remember" &&
             action.action != "click" &&
+            action.action != "double_click" &&
+            action.action != "right_click" &&
+            action.action != "hover" &&
+            action.action != "focus" &&
+            action.action != "clear" &&
+            action.action != "check" &&
+            action.action != "uncheck" &&
+            action.action != "scroll_into_view" &&
             action.action != "type" &&
             action.action != "extract" &&
+            action.action != "get_html" &&
+            action.action != "evaluate" &&
             action.action != "wait" &&
+            action.action != "wait_for_navigation" &&
             action.action != "scroll" &&
             action.action != "press" &&
             action.action != "select" &&
             action.action != "drag" &&
             action.action != "wait_for" &&
             action.action != "switch_frame" &&
+            action.action != "upload_file" &&
+            action.action != "screenshot" &&
+            action.action != "tabs" &&
+            action.action != "switch_tab" &&
+            action.action != "close_tab" &&
+            action.action != "cookies" &&
+            action.action != "set_cookie" &&
+            action.action != "delete_cookies" &&
+            action.action != "set_window_size" &&
             action.action != "finish" &&
             action.action != "close")
         {
@@ -102,13 +123,23 @@ bool ActionParser::parse_action(
         // (extract may have an empty target = whole page)
         if ((action.action == "navigate" ||
              action.action == "click" ||
+             action.action == "double_click" ||
+             action.action == "right_click" ||
+             action.action == "hover" ||
+             action.action == "focus" ||
+             action.action == "clear" ||
+             action.action == "check" ||
+             action.action == "uncheck" ||
+             action.action == "scroll_into_view" ||
              action.action == "type" ||
              action.action == "scroll" ||
              action.action == "press" ||
              action.action == "select" ||
              action.action == "drag" ||
              action.action == "wait_for" ||
-             action.action == "switch_frame") &&
+             action.action == "switch_frame" ||
+             action.action == "switch_tab" ||
+             action.action == "upload_file") &&
             action.target.empty())
         {
             error = "Action target cannot be empty!";
@@ -119,6 +150,17 @@ bool ActionParser::parse_action(
         if (action.action == "remember" && action.value.empty())
         {
             error = "remember needs the text to save in value!";
+            return false;
+        }
+
+        // Actions that need their payload in "value".
+        if ((action.action == "evaluate" ||
+             action.action == "set_cookie" ||
+             action.action == "set_window_size" ||
+             action.action == "upload_file") &&
+            action.value.empty())
+        {
+            error = action.action + " needs its payload in value!";
             return false;
         }
 

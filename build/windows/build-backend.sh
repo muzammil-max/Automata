@@ -51,11 +51,16 @@ SOURCES=(
     main.cpp
     api/api_server.cpp
     api/nvidia_client.cpp
+    api/openai_client.cpp
+    api/anthropic_client.cpp
+    api/gemini_client.cpp
+    api/ai_provider_factory.cpp
     api/http_client.cpp
     agent/agent.cpp
     browser/browser_controller.cpp
     parser/parser.cpp
     storage/session_storage.cpp
+    settings/llm_settings.cpp
     instructions/instruction.cpp
 )
 

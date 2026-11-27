@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 
 // ================================================================
@@ -28,7 +29,22 @@ HttpResponse http_request(const std::string &method,
                           const std::string &content_type,
                           const std::string &authorization,
                           long connect_timeout_seconds,
-                          long total_timeout_seconds);
+                          long total_timeout_seconds,
+                          const std::string &extra_headers = "");
+
+// Same request, but every received byte is also passed to `on_chunk` while
+// the response is still arriving. Used for SSE / streaming LLM answers.
+// The full body is still returned in HttpResponse::body.
+HttpResponse http_request_stream(
+    const std::string &method,
+    const std::string &url,
+    const std::string &body,
+    const std::string &content_type,
+    const std::string &authorization,
+    long connect_timeout_seconds,
+    long total_timeout_seconds,
+    const std::function<void(const std::string &)> &on_chunk,
+    const std::string &extra_headers = "");
 
 // Process start/end par ek dafa call karo (curl global state).
 void http_global_init();
